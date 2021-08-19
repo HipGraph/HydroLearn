@@ -407,57 +407,69 @@ def get_device(use_gpu):
 
 
 def to_device(items, device):
-    device_items = []
-    for item in items:
-        device_items += [item.to(device)]
-    return device_items
+    if isinstance(items, list): # Multiple items to put onto device
+        device_items = []
+        for item in items:
+            device_items += [item.to(device)]
+        return device_items
+    else: # Single item to put onto device
+        return to_device([items], device)[0]
 
 
 def to_tensor(items, types):
-    tensors = []
-    for i in range(len(items)):
-        if isinstance(items[i], torch.Tensor):
-            tensors += items[i]
-        elif isinstance(items[i], np.ndarray):
-            if isinstance(types, list):
-                tensors += [torch.tensor(items[i], dtype=types[i])]
+    if isinstance(items, list): # Multiple items to convert to tensor
+        tensors = []
+        for i in range(len(items)):
+            if isinstance(items[i], torch.Tensor):
+                tensors += items[i]
+            elif isinstance(items[i], np.ndarray):
+                if isinstance(types, list):
+                    tensors += [torch.tensor(items[i], dtype=types[i])]
+                else:
+                    tensors += [torch.tensor(items[i], dtype=types)]
             else:
-                tensors += [torch.tensor(items[i], dtype=types)]
-        else:
-            raise NotImplementedError("Only numpy.ndarray and torch.Tensor types are implemented")
-    return tensors
+                raise NotImplementedError("Only numpy.ndarray and torch.Tensor types are implemented")
+        return tensors
+    else: # Single item to convert to tensor
+        return to_tensor([items])[0]
 
 
 def to_ndarray(items):
-    ndarrays = []
-    for item in items:
-        if isinstance(item, torch.Tensor):
-            ndarrays += [item.detach().cpu().numpy()]
-        elif isinstance(item, np.ndarray):
-            ndarrays += [item]
-        elif isinstance(item, list):
-            ndarrays += [np.array(item)]
-        else:
-            raise NotImplementedError()
-    return ndarrays
+    if isinstance(items, list): # Multiple items to convert to ndarray
+        ndarrays = []
+        for item in items:
+            if isinstance(item, torch.Tensor):
+                ndarrays += [item.detach().cpu().numpy()]
+            elif isinstance(item, np.ndarray):
+                ndarrays += [item]
+            elif isinstance(item, list):
+                ndarrays += [np.array(item)]
+            else:
+                raise NotImplementedError()
+        return ndarrays
+    else: # Single item to convert to ndarray
+        return to_ndarray([items])[0]
 
 
 # moveaxis(a, [0, 1, 2], [1, 2, 0]) means we move axis 0 to 1, axis 1 to 2, and axis 2 to 0
 def move_axes(items, sources, destinations):
-    if not isinstance(items, list) or not isinstance(sources, list) or not isinstance(destinations, list):
-        raise ValueError("Items, sources, and destinations must be type list")
-    if isinstance(items[0], np.ndarray):
-        if isinstance(sources[0], list) and isinstance(destinations[0], list):
-            return [np.moveaxis(item, src, dst) for item, src, dst in zip(items, sources, destinations)]
+    if not isinstance(sources, list) or not isinstance(destinations, list):
+        raise ValueError("Sources and destinations must be type list")
+    if isinstance(items, list): # Multiple items to move_axes on
+        if isinstance(items[0], np.ndarray):
+            if isinstance(sources[0], list) and isinstance(destinations[0], list):
+                return [np.moveaxis(item, src, dst) for item, src, dst in zip(items, sources, destinations)]
+            else:
+                return [np.moveaxis(item, sources, destinations) for item in items]
+        elif isinstance(items[0], torch.Tensor):
+            if isinstance(sources[0], list) and isinstance(destinations[0], list):
+                return [torch.movedim(item, src, dst) for item, src, dst in zip(items, sources, destinations)]
+            else:
+                return [torch.movedim(item, sources, destinations) for item in items]
         else:
-            return [np.moveaxis(item, sources, destinations) for item in items]
-    elif isinstance(items[0], torch.Tensor):
-        if isinstance(sources[0], list) and isinstance(destinations[0], list):
-            return [torch.movedim(item, src, dst) for item, src, dst in zip(items, sources, destinations)]
-        else:
-            return [torch.movedim(item, sources, destinations) for item in items]
-    else:
-        raise NotImplementedError("Only numpy.ndarray and torch.Tensor types are implemented")
+            raise NotImplementedError("Only numpy.ndarray and torch.Tensor types are implemented")
+    else: # Single item to move_axes on
+        return move_axes([items], sources, destinations)[0]
 
 
 def get_chkpt_dir(chkpt_dir, model_name):

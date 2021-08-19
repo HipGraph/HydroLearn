@@ -67,23 +67,17 @@ class LSTM(Model):
         a = self.act_func_map[self.out_act](z)
         return a
 
-
     # Preconditions:
     #   train/valid/test = [spatiotemporal_X, spatiotemporal_Y]
     #   spatiotemporal_X.shape = (n_samples, n_temporal_in, n_spatial, n_predictors)
     #   spatiotemporal_Y.shape = (n_samples, n_temporal_out, n_spatial, n_responses)
     def optimize(self, train, valid=None, test=None, lr=0.001, lr_decay=0.01, n_epochs=100, early_stop_epochs=10, mbatch_size=256, reg=0.0, loss="mse", opt="sgd", init="xavier", init_seed=-1, batch_shuf_seed=-1, n_procs=1, proc_rank=0, chkpt_epochs=1, chkpt_dir="Checkpoints", use_gpu=True):
         # Reformat data to accepted shape, convert to tensors, put data + model onto device, then unpack
-        device = util.get_device(use_gpu)
-        self = util.to_device([self], device)[0]
-        train = util.to_device(util.to_tensor(train, [torch.float, torch.float, torch.long]), device)
-        train_X, train_Y = train[0], train[1]
+        self, train_X, train_Y = self.prepare(train, use_gpu)
         if valid is not None:
-            valid = util.to_device(util.to_tensor(valid, [torch.float, torch.float, torch.long]), device)
-            valid_X, valid_Y = valid[0], valid[1]
+            self, valid_X, valid_Y = self.prepare(valid, use_gpu)
         if test is not None:
-            test = util.to_device(util.to_tensor(test, [torch.float, torch.float, torch.long]), device)
-            test_X, test_Y = test[0], test[1]
+            self, test_X, test_Y = self.prepare(test, use_gpu)
         # Initialize loss, optimizer, and parameters
         self.crit = self.loss_func_map[loss]()
         self.opt = self.opt_func_map[opt](self.parameters(), lr=lr, weight_decay=reg)
@@ -152,31 +146,21 @@ class LSTM(Model):
         path = util.path([chkpt_dir, "Final.pth"])
         self.checkpoint(path)
         # Return data to original device (cpu), shape, and type (NumPy.ndarray)
-        device = util.get_device(False)
-        self = util.to_device([self], device)[0]
-        train = util.to_ndarray(util.to_device(train, device))
+        self, train_X, train_Y = self.prepare([train_X, train_Y], False, True)
         if valid is not None:
-            valid = util.to_ndarray(util.to_device(valid, device))
+            self, valid_X, valid_Y = self.prepare([valid_X, valid_Y], False, True)
         if test is not None:
-            test = util.to_ndarray(util.to_device(test, device))
+            self, test_X, test_Y = self.prepare([test_X, test_Y], False, True)
 
     # Preconditions:
-    #   data = [*_X, n_temporal_out]
-    #   X.shape=(n_samples, n_temporal_in, n_spatial, n_predictors)
-    # Postconditions: 
-    #   Yhat.shape=(n_samples, n_temporal_out, n_spatial, n_responses)
-    def predict(self, data, axes=[0, 1, 2, 3], mbatch_size=256, method="direct", use_gpu=True):
+    #   data = [spatiotemporal_X, n_temporal_out]
+    #   spatiotemporal_X.shape = (n_samples, n_temporal_in, n_spatial, n_predictors)
+    def predict(self, data, mbatch_size=256, method="direct", use_gpu=True):
         X, n_temporal_out = data[0], data[1]
-        sample_axis, temporal_axis, spatial_axis, feature_axis = axes[0], axes[1], axes[2], axes[3]
-        n_samples, n_temporal_in = X.shape[sample_axis], X.shape[temporal_axis]
-        n_spatial, n_predictors = X.shape[spatial_axis], X.shape[feature_axis]
+        n_samples, n_temporal_in, n_spatial, n_predictors = X.shape[0], X.shape[1], X.shape[2], X.shape[3]
         n_responses = self.n_responses
-        X = np.moveaxis(X, [temporal_axis, spatial_axis], [spatial_axis, temporal_axis])
-        Yhat = np.zeros([n_samples, n_spatial, n_temporal_out, n_responses])
-        device = util.get_device(use_gpu)
-        self = util.to_device([self], device)[0]
-        data = util.to_device(util.to_tensor([X, Yhat], [torch.float, torch.float, torch.long]), device)
-        X, Yhat = data[0], data[1]
+        Yhat = np.zeros([n_samples, n_temporal_out, n_spatial, n_responses])
+        self, X, Yhat = self.prepare([X, Yhat], use_gpu)
         self.eval()
         if method == "direct":
             n_mbatches = n_samples // mbatch_size
@@ -193,9 +177,8 @@ class LSTM(Model):
                 else:
                     raise RuntimeError(err)
                 device = util.get_device(False)
-                self = util.to_device([self], device)[0]
-                data = util.to_device(data, device)
-                X, Yhat = data[0], data[1]
+                self = util.to_device(self, device)
+                X, Yhat = util.to_device([X, Yhat], device)
                 pb = ProgressBar()
                 for i in pb(range(len(indices)-1)):
                     start, end = indices[i], indices[i+1]
@@ -204,12 +187,27 @@ class LSTM(Model):
             raise NotImplementedError()
         else:
             raise NotImplementedError()
-        device = util.get_device(False)
-        self = util.to_device([self], device)[0]
-        data = util.to_ndarray(util.to_device([X, Yhat], device))
-        data = util.move_axes(data, [temporal_axis, spatial_axis], [spatial_axis, temporal_axis])
-        X, Yhat = data[0], data[1]
+        self, X, Yhat = self.prepare([X, Yhat], use_gpu, True)
         return Yhat
+
+    # Precondition(s):
+    #   data.type = list
+    #   spatiotemporal_X.shape = (n_samples, n_temporal_in, n_spatial, n_predictors)
+    #   spatiotemporal_Y.shape = (n_samples, n_temporal_out, n_spatial, n_responses)
+    def prepare_data(self, data, use_gpu, revert=False):
+        if revert:
+            device = util.get_device(False)
+            data = util.move_axes(util.to_ndarray(util.to_device(data, device)), [1, 2], [2, 1])
+        else:
+            device = util.get_device(use_gpu)
+            data = util.to_device(
+                util.to_tensor(
+                    util.move_axes(data, [1, 2], [2, 1]), 
+                    [torch.float, torch.float]
+                ), 
+                device
+            )
+        return data
 
 
 def init(var):

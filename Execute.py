@@ -395,6 +395,10 @@ def make_func_args(func, var):
     return func_args
 
 
+# Precondition(s):
+#   spatiotemporal_X.shape = (n_samples, n_temporal_in, n_spatial, n_predictors)
+#   spatiotemporal_Y.shape = (n_samples, n_temporal_out, n_spatial, n_responses)
+#   spatial.shape = (n_spatial, n_exogenous)
 def axes_to_req_layout(data, model):
     pass
 

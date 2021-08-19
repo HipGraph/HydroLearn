@@ -6,6 +6,7 @@ from torch_geometric import nn as torchg_nn
 from os.path import exists as path_exists
 import Utility as util
 from inspect import currentframe
+from time import time
 
 
 class Model(torch_nn.Module):
@@ -79,7 +80,7 @@ class Model(torch_nn.Module):
         return "\n".join(config)
 
     def init_params(self, init, seed=-1):
-        manual_seed((seed if seed > -1 else time.time()))
+        manual_seed((seed if seed > -1 else time.time))
         for name, param in self.named_parameters():
             if "bias" in name:
                 self.init_func_map["constant"](param, 0.0)
@@ -117,10 +118,28 @@ class Model(torch_nn.Module):
         return self.dataxes_layout_map
 
     def name(self):
-        raise NotImplementedError("Implement %s() please!" % (__name__+"."+currentframe().f_code.co_name))
+        return self.__class__.__name__
+
+    def prepare(self, data, use_gpu, revert=False):
+        return [self.prepare_model(use_gpu, revert)] + self.prepare_data(data, use_gpu, revert)
+    
+    def prepare_model(self, use_gpu, revert=False):
+        if revert:
+            device = util.get_device(False)
+            self = util.to_device(self, device)
+        else:
+            device = util.get_device(use_gpu)
+            self = util.to_device(self, device)
+        return self
+
+    def prepare_data(self, data, use_gpu, revert=False):
+        func_name = self.__class__.__name__+"."+currentframe().f_code.co_name
+        raise NotImplementedError("Implement %s() please!" % (func_name))
 
     def optimize(self):
-        raise NotImplementedError("Implement %s() please!" % (__name__+"."+currentframe().f_code.co_name))
+        func_name = self.__class__.__name__+"."+currentframe().f_code.co_name
+        raise NotImplementedError("Implement %s() please!" % (func_name))
 
     def predict(self):
-        raise NotImplementedError("Implement %s() please!" % (__name__+"."+currentframe().f_code.co_name))
+        func_name = self.__class__.__name__+"."+currentframe().f_code.co_name
+        raise NotImplementedError("Implement %s() please!" % (func_name))

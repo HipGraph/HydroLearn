@@ -5,32 +5,32 @@ from Container import Container
 class Variables(Container):
 
     def __init__(self):
-        self.copy(self.get_all_vars())
+        self.copy(self.all_vars())
 
-    def get_all_vars(self):
+    def all_vars(self):
         container = Container()
-        container.set("common", self.get_common_vars())
-        container.set("plotting", self.get_plotting_vars())
-        container.set("hyperparameters", self.get_hyperparameter_vars())
-        container.set("training", self.get_training_vars())
-        container.set("evaluating", self.get_evaluating_vars())
-        container.set("checkpointing", self.get_checkpointing_vars())
-        container.set("distributed", self.get_distributed_vars())
-        container.set("littleriver", self.get_littleriver_vars())
-        container.set("historical", self.get_historical_vars())
-        container.set("observed", self.get_observed_vars())
-        container.set("basindata", self.get_basindata_vars())
-        container.set("graph", self.get_graph_vars())
-        container.set("debug", self.get_debug_vars())
+        container.set("common", self.common_vars())
+        container.set("plotting", self.plotting_vars())
+        container.set("hyperparameters", self.hyperparameter_vars())
+        container.set("training", self.training_vars())
+        container.set("evaluating", self.evaluating_vars())
+        container.set("checkpointing", self.checkpointing_vars())
+        container.set("distributed", self.distributed_vars())
+        container.set("littleriver", self.littleriver_vars())
+        container.set("historical", self.historical_vars())
+        container.set("observed", self.observed_vars())
+        container.set("basindata", self.basindata_vars())
+        container.set("graph", self.graph_vars())
+        container.set("debug", self.debug_vars())
         return container
 
-    def get_debug_vars(self):
+    def debug_vars(self):
         container = Container()
         container.set("print_data", [True, False])
         container.set("data_memory", False)
         return container
 
-    def get_plotting_vars(self):
+    def plotting_vars(self):
         container = Container()
         container.set("plot_model_fit", False)
         container.set("plot_model_fit", True)
@@ -40,16 +40,16 @@ class Variables(Container):
         container.set("plot_graph_distributions", "".split(","))
         return container
 
-    def get_hyperparameter_vars(self):
+    def hyperparameter_vars(self):
         container = Container()
-        container.set("LSTM", self.get_LSTM_hyperparameter_vars())
-        container.set("GNN", self.get_GNN_hyperparameter_vars())
-        container.set("GEOMAN", self.get_GEOMAN_hyperparameter_vars())
-        container.set("NaiveLastTimestep", self.get_NaiveLastTimestep_hyperparameter_vars())
-        container.set("ARIMA", self.get_ARIMA_hyperparameter_vars())
+        container.set("LSTM", self.LSTM_hyperparameter_vars())
+        container.set("GNN", self.GNN_hyperparameter_vars())
+        container.set("GEOMAN", self.GEOMAN_hyperparameter_vars())
+        container.set("NaiveLastTimestep", self.NaiveLastTimestep_hyperparameter_vars())
+        container.set("ARIMA", self.ARIMA_hyperparameter_vars())
         return container
 
-    def get_LSTM_hyperparameter_vars(self):
+    def LSTM_hyperparameter_vars(self):
         container = Container()
         n = 128
         ratios = [1.0, 1.0]
@@ -62,7 +62,7 @@ class Variables(Container):
         container.set("output_activation", "identity")
         return container
 
-    def get_GNN_hyperparameter_vars(self):
+    def GNN_hyperparameter_vars(self):
         container = Container()
         n = 128
         ratios = [1.0, 1.0, 1.0]
@@ -77,7 +77,7 @@ class Variables(Container):
         container.set("bidirectional", False)
         return container
 
-    def get_GEOMAN_hyperparameter_vars(self):
+    def GEOMAN_hyperparameter_vars(self):
         container = Container()
         n = 128
         container.set("n_hidden_encoder", n)
@@ -87,11 +87,11 @@ class Variables(Container):
         container.set("dropout_rate", 0.0)
         return container
 
-    def get_NaiveLastTimestep_hyperparameter_vars(self):
+    def NaiveLastTimestep_hyperparameter_vars(self):
         container = Container()
         return container
 
-    def get_ARIMA_hyperparameter_vars(self):
+    def ARIMA_hyperparameter_vars(self):
         container = Container()
         container.set("order", [0, 0, 0])
         container.set("seasonal_order", [0, 0, 0, 0])
@@ -102,7 +102,7 @@ class Variables(Container):
         container.set("trend_offset", 1)
         return container
 
-    def get_training_vars(self):
+    def training_vars(self):
         container = Container()
         container.set("train", False)
         container.set("n_epochs", 100)
@@ -119,7 +119,7 @@ class Variables(Container):
         container.set("batch_shuf_seed", 1)
         return container
 
-    def get_evaluating_vars(self):
+    def evaluating_vars(self):
         container = Container()
         container.set("evaluate", False)
         container.set("evaluation_range", [0.0, 1.0])
@@ -127,13 +127,13 @@ class Variables(Container):
         container.set("evaluated_checkpoint", "NULL")
         return container
 
-    def get_checkpointing_vars(self):
+    def checkpointing_vars(self):
         container = Container()
         container.set("checkpoint_dir", "Checkpoints")
         container.set("chkpt_epochs", -1)
         return container
 
-    def get_distributed_vars(self):
+    def distributed_vars(self):
         container = Container()
         container.set("root_process_rank", 0)
         container.set("process_rank", 0)
@@ -176,7 +176,7 @@ class Variables(Container):
         container.set("nersc", False)
         return container
 
-    def get_common_vars(self):
+    def common_vars(self):
         container = Container()
         container.set("model", "LSTM")
         data_source = "observed"
@@ -235,7 +235,7 @@ class Variables(Container):
         container.set("dynamic_time_warping_cache_filename", "DynamicTimeWarping_Feature[%s]_Type[%s].pkl")
         return container
 
-    def get_littleriver_vars(self):
+    def littleriver_vars(self):
         container = Container()
         container.set("source_name", "Little River")
         container.set(
@@ -373,7 +373,7 @@ class Variables(Container):
         container.set("n_responses", len(container.get("response_features")))
         return container
 
-    def get_historical_vars(self):
+    def historical_vars(self):
         container = Container()
         container.set(
             "header_fields",
@@ -529,7 +529,7 @@ class Variables(Container):
         container.set("n_responses", len(container.get("response_features")))
         return container
 
-    def get_observed_vars(self):
+    def observed_vars(self):
         container = Container()
         container.set("header_fields", ["subbasin", "date", "flow", "FLOW_OUTcms"])
         container.set("header_fields", ["subbasin", "date", "flow", "FLOW_OUTcms", "wind", "PRECIPmm", "tmax", "tmin"])
@@ -655,7 +655,7 @@ class Variables(Container):
         container.set("n_responses", len(container.get("response_features")))
         return container
 
-    def get_basindata_vars(self):
+    def basindata_vars(self):
         container = Container()
         container.set(
             "header_fields",
@@ -713,7 +713,7 @@ class Variables(Container):
         container.set("spatial_selection", "literal,1,2".split(","), "test")
         return container
 
-    def get_graph_vars(self):
+    def graph_vars(self):
         container = Container()
         container.set("features", "FLOW_OUTcms".split(","))
         container.set("similarity_measure", "dynamic_time_warping")

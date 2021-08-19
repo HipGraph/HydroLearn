@@ -6,7 +6,7 @@ sys.path.append(parentdir)
 import torch
 import torch.distributed as dist
 import numpy as np
-import time
+from time import time
 import hashlib
 from progressbar import ProgressBar
 import Utility as util
@@ -89,11 +89,13 @@ class GEOMAN(Model):
     #   spatiotemporal_Y.shape = (n_samples, n_temporal_out, n_spatial, n_responses)
     #   spatial.shape = (n_spatial, n_exogeneous)
     def optimize(self, train, valid=None, test=None, axes=[0, 1, 2, 3], lr=0.001, lr_decay=0.01, n_epochs=100, early_stop_epochs=10, mbatch_size=256, reg=0.0, loss="mse", opt="sgd", init="xavier", init_seed=-1, batch_shuf_seed=-1, n_procs=1, proc_rank=0, chkpt_epochs=1, chkpt_dir="Checkpoints", use_gpu=True):
-        train = self.convert_to_GeoMAN_inputs(train[0], train[1], train[2])
+        train = self.prepare_data(train)
         if not valid is None:
-            valid = self.convert_to_GeoMAN_inputs(valid[0], valid[1], valid[2])
+            valid = self.prepare_data(valid)
         if not test is None:
-            test = self.convert_to_GeoMAN_inputs(test[0], test[1], test[2])
+            test = self.prepare_data(test)
+        # Initialize parameters
+        self.init_params(init, init_seed)
         # Commence optimization
         self.train_losses, self.valid_losses, self.test_losses = [], [], []
         n_samples = train[0][0].shape[0]
@@ -160,7 +162,7 @@ class GEOMAN(Model):
         n_samples, n_temporal_in, n_spatial, n_predictors  = X.shape[0], X.shape[1], X.shape[2], X.shape[3]
         n_temporal_out, n_responses = self.hps.n_steps_decoder, self.hps.n_output_decoder
         Yhat = np.zeros([n_samples, n_temporal_out, n_spatial, n_responses])
-        data = self.convert_to_GeoMAN_inputs(X, None, E)
+        data = self.prepare_data([X, None, E])
         if method == "direct":
             n_mbatches = n_samples // mbatch_size
             indices = np.linspace(0, n_samples, n_mbatches+1, dtype=np.int)
@@ -180,7 +182,7 @@ class GEOMAN(Model):
     #   spatiotemporal_X.shape = (n_samples, n_temporal_in, n_spatial, n_predictors)
     #   spatiotemporal_Y.shape = (n_samples, n_temporal_out, n_spatial, n_responses)
     #   spatial.shape = (n_spatial, n_exogeneous)
-    def convert_to_GeoMAN_inputs(self, spatiotemporal_X, spatiotemporal_Y, spatial):
+    def prepare_data(self, data):
         # ==========================
         # === GeoMAN Data Format ===
         # ==========================
@@ -221,7 +223,7 @@ class GEOMAN(Model):
         #               \/
         #   shape=(n_samples, n_temporal_out, n_responses)
         #
-        X, Y, E = spatiotemporal_X, spatiotemporal_Y, spatial
+        X, Y, E = data[0], data[1], data[2]
         n_samples, n_temporal_in, n_spatial, n_predictors = X.shape[0], X.shape[1], X.shape[2], X.shape[3]
         n_temporal_out, n_responses = self.hps.n_steps_decoder, self.hps.n_output_decoder 
         n_exogenous = self.hps.n_external_input
@@ -237,9 +239,9 @@ class GEOMAN(Model):
         else:
             external_inputs = [np.tile(E[s,:], (n_samples, n_temporal_out, 1)) for s in range(n_spatial)]
         local_attention_states = [
-            util.move_axes([X[:,:,s,:]], [0, 1, 2], [0, 2, 1])[0] for s in range(n_spatial)
+            util.move_axes(X[:,:,s,:], [0, 1, 2], [0, 2, 1]) for s in range(n_spatial)
         ]
-        global_attention_states = util.move_axes([X], [0, 1, 2, 3], [0, 3, 1, 2])[0]
+        global_attention_states = util.move_axes(X, [0, 1, 2, 3], [0, 3, 1, 2])
         if Y is None:
             labels = np.zeros((n_samples, n_temporal_out, n_responses))
             labels = [labels for s in range(n_spatial)]
@@ -254,6 +256,15 @@ class GEOMAN(Model):
             labels
         ]
         return data
+
+    # Notes:
+    #   This function attempts to induce determinism for optimization but testing appears to show that GeoMAN uses non-deterministic tensorflow operations internall. 
+    #   Non-deterministic operations may also come from cuDNN used in GPU training as described by Kilian Batzner here: 
+    #       https://stackoverflow.com/questions/53396670/unable-to-reproduce-tensorflow-results-even-after-setting-random-seed
+    def init_params(self, init, seed=-1):
+        np.random.seed((seed if seed > -1 else time()))
+        tf.random.set_random_seed((seed if seed > -1 else time()))
+        self.model.init(self.sess)
 
     def load(self, var, path):
         chkpt_dir = os.sep.join(path.split(os.sep)[:-1])
@@ -273,9 +284,6 @@ class GEOMAN(Model):
 
     def checkpoint(self, path):
         self.saver.save(self.sess, path)
-
-    def name(self):
-        return self.__class__.__name__
 
 
 def init(var):

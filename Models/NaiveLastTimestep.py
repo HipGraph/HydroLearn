@@ -18,7 +18,6 @@ class NaiveLastTimestep(Model):
         a = np.tile(x[:,-1:,:,-self.n_responses:], [1, n_temporal_out, 1, 1])
         return a
 
-
     # Preconditions:
     #   train/valid/test = [*_X, *_Y]
     #   *_X.shape=(n_samples, n_temporal_in, n_spatial, n_predictors)
@@ -57,9 +56,6 @@ class NaiveLastTimestep(Model):
 
     def load(self, var, chkpt_path):
         return self
-
-    def name(self):
-        return __class__.__name__
 
 
 def init(var):

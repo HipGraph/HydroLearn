@@ -18,7 +18,6 @@ arima.__getnewargs__ = __getnewargs__
 
 class ARIMA(Model):
 
-
     def __init__(self, n_predictors, n_responses, order=(0, 0, 0), seasonal_order=(0, 0, 0, 0), trend=None, enforce_stationarity=True, enforce_invertability=True, concentrate_scale=False, trend_offset=1):
         self.n_responses, self.order, self.seasonal_order = n_responses, order, seasonal_order
         self.trend, self.enforce_stationarity = trend, enforce_stationarity
@@ -33,7 +32,6 @@ class ARIMA(Model):
             ["concentrate_scale", None],
             ["trend_offset", None],
         ]
-
 
     # Preconditions:
     #   X.shape=(n_samples, n_temporal_in, n_spatial, n_predictors)
@@ -60,14 +58,12 @@ class ARIMA(Model):
                         A[i,:,j,k] = self.model.forecast(n_temporal_out)
         return A
 
-
     # Preconditions:
     #   train/valid/test = [*_X, *_Y]
     #   *_X.shape=(n_samples, n_temporal_in, n_spatial, n_predictors)
     #   *_Y.shape=(n_samples, n_temporal_out, n_spatial, n_responses)
     def optimize(self, train, valid=None, test=None, axes=[0, 1, 2, 3], lr=0.001, lr_decay=0.01, n_epochs=100, early_stop_epochs=10, mbatch_size=256, reg=0.0, loss="mse", opt="sgd", init="xavier", init_seed=-1, batch_shuf_seed=-1, n_procs=1, proc_rank=0, chkpt_epochs=1, chkpt_dir="Checkpoints", use_gpu=True):
         self.train_losses, self.valid_losses, self.test_losses = [0], [0], [0]
-
 
     # Preconditions:
     #   data = [X, n_temporal_out]
@@ -95,16 +91,11 @@ class ARIMA(Model):
         X, Yhat = data[0], data[1]
         return Yhat
 
-
     def init_params(self, init, seed):
         pass
 
-
     def load(self, var, chkpt_path):
         return self
-
-    def name(self):
-        return __class__.__name__
 
 
 def init(var):
@@ -138,5 +129,5 @@ def test():
     print(Yhat)
 
 
-if len(sys.argv) > 1 and sys.argv[0] == "ARIMA.py" and sys.argv[1] == "test":
+if __name__ == "__main__":
     test()
