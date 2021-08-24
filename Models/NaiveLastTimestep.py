@@ -1,8 +1,10 @@
+import os
 import numpy as np
 import sys
 from progressbar import ProgressBar
 import Utility as util
 from Models.Model import Model
+from Container import Container
 
 
 class NaiveLastTimestep(Model):
@@ -60,6 +62,16 @@ class NaiveLastTimestep(Model):
 
 def init(var):
     return NaiveLastTimestep(var.get("n_responses"))
+
+
+def model_name():
+    return os.path.basename(__file__).replace(".py", "")
+
+
+class HyperparameterVariables(Container):
+
+    def __init__(self):
+        pass
 
 
 def test():

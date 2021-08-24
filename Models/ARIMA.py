@@ -7,6 +7,7 @@ from progressbar import ProgressBar
 import Utility as util
 from Models.Model import Model
 from statsmodels.tsa.arima.model import ARIMA as arima
+from Container import Container
 
 
 # SOURCE: https://machinelearningmastery.com/save-arima-time-series-forecasting-model-python/
@@ -109,6 +110,22 @@ def init(var):
         var.get("trend_offset")
     )
     return model
+
+
+def model_name():
+    return os.path.basename(__file__).replace(".py", "")
+
+
+class HyperparameterVariables(Container):
+
+    def __init__(self):
+        self.set("order", [0, 0, 0])
+        self.set("seasonal_order", [0, 0, 0, 0])
+        self.set("trend", None)
+        self.set("enforce_stationarity", True)
+        self.set("enforce_invertability", True)
+        self.set("selfcentrate_scale", False)
+        self.set("trend_offset", 1)
 
 
 def test():

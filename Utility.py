@@ -362,16 +362,24 @@ def curate_error_report(errors, spatial_labels, feature_labels, partitions, spat
 # Construct a - b
 def list_subtract(a, b):
     return [a_i for a_i in a if a_i not in b]
+    
+
+def to_key_index_dict(keys, offset=0, stride=1):
+    return {key: offset+i for key, i in zip(keys, np.arange(0, len(keys), stride))}
 
 
-def to_dictionary(keys, values):
+def to_dict(keys, values):
     if not isinstance(keys, list) and not isinstance(values, list):
         raise ValueError("Keys and values must be type list")
     return {key: value for key, value in zip(keys, values)}
 
 
-def invert_dictionary(a):
+def invert_dict(a):
     return {value: key for key, value in a.items()}
+
+
+def get_dict_values(a, keys):
+    return [a[key] for key in keys]
 
 
 def to_cache(data, path):

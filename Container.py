@@ -11,18 +11,14 @@ set_printoptions(precision=3, suppress=True, linewidth=200)
 
 class Container:
 
-
     partition_sep = os_sep
     context_sep = ":"
-
 
     def __init__(self):
         pass
 
-
     def g(self, name, partition=None, context=None, recurse=False, must_exist=True):
         return self.get(name, partition, context, recurse, must_exist)
-
 
     def get(self, name, partition=None, context=None, recurse=False, must_exist=True):
         if isinstance(name, str) and (isinstance(partition, str) or partition is None):
@@ -36,12 +32,11 @@ class Container:
 
     def _get(self, name, partition=None, context=None, recurse=False, must_exist=True):
         if partition == "*":
-            values = []
-            for _name, _value1, _partition in self.get_name_value_partitions(False):
-                if name == name1:
-                    print(_name, _value, _partition)
-                    values += [_value]
-            return values
+            value_partition_pairs = []
+            for _name, _value, _partition in self.get_name_value_partitions(False):
+                if name == _name:
+                    value_partition_pairs += [[_value, _partition]]
+            return value_partition_pairs
         key = self.get_key(name, partition)
         container = self.get_container(context)
         if not container.key_exists(key):
@@ -82,24 +77,13 @@ class Container:
             self._set(name, value, partition, context)
         return self
 
-    def validate_type(self, item, category):
-        category_types_map = {
-            "name": [util.is_string, util.is_list_of_strings], 
-            "value": [util.is_anything], 
-            "partition": [util.is_string, util.is_list_of_strings, util.is_none], 
-            "context": [util.is_list_of_strings, util.is_none], 
-        }
-        correct = any(type_func(item) for type_func in category_types_map[category])
-        if not correct:
-            raise ValueError("%s has incorrect type: %s" % (category.capitalize(), item))
-
     def _set(self, name, value, partition=None, context=None):
 #        self = self.get_context_leaf(context)
 #        print("Set: ", name, value, partition, context)
         if not isinstance(name, str):
             raise ValueError("Name must be type str()")
         if self.partition_sep in name:
-            raise ValueError("Name must not contain \"%s\"", self.partition_sep)
+            raise ValueError("Name must not contain \"%s\"" % (self.partition_sep))
         if not partition is None and not isinstance(partition, str):
             raise ValueError("Partition names must be None or type str()")
         if isinstance(context, list) and len(context) > 0 and not isinstance(context[0], str):
@@ -114,6 +98,40 @@ class Container:
         container.__dict__[key] = value
         return previous
 
+    def r(self, name, partition=None, context=None, recurse=False, must_exist=True):
+        return self.rem(name, partition, context, recurse, must_exist)
+
+    def rem(self, name, partition=None, context=None, recurse=False, must_exist=True):
+        if isinstance(name, str) and (isinstance(partition, str) or partition is None):
+            return self._rem(name, partition, context, recurse, must_exist)
+        elif isinstance(name, list):
+            return [self._rem(_name, partition, context, recurse, must_exist) for _name in name]
+        elif isinstance(partition, list):
+            return [self._rem(name, _partition, context, recurse, must_exist) for _partition in partition]
+        else:
+            ValueError("Name must be type string/list, partition must be type string/list or None")
+
+    def _rem(self, name, partition=None, context=None, recurse=False, must_exist=True):
+        if partition == "*":
+            partitions = []
+            for _name, _value, _partition in self.get_name_value_partitions(False):
+                if name == _name:
+                    partitions += [_partition]
+            for _partition in partitions:
+                self._rem(name, _partition, context, recurse, must_exist)
+            return self
+        key = self.get_key(name, partition)
+        container = self.get_container(context)
+        if not container.key_exists(key):
+            if recurse:
+                for key, value in self.get_key_values():
+                    if isinstance(value, Container):
+                        value._rem(name, partition, recurse, must_exist)
+            if must_exist:
+                raise ValueError("Key \"%s\" does not exist in this Container" % (key))
+        else:
+            del container.__dict__[key]
+        return self
 
     def copy(self, container):
         if isinstance(container, list) and len(container) > 0 and isinstance(container[0], Container):
@@ -128,28 +146,25 @@ class Container:
             raise ValueError("Item for copying must be a Container, list of Containers, or None")
         return self
 
-
     def _copy(self, container):
         for name, value, partition in container.get_name_value_partitions():
             self.set(name, value, partition)
 
-    def checkout(self, name):
+    def checkout(self, name, recurse=True, must_exist=False):
         self.validate_type(name, "name")
         if isinstance(name, str):
             name = [name]
         container = Container()
         for _name in name:
-            value = self.get(_name, recurse=True, must_exist=False)
+            value = self.get(_name, recurse=recurse, must_exist=must_exist)
             if not value is None:
                 container.set(_name, value)
         return container
-
 
     def merge(self, container, recurse_noncontextual=True):
         if recurse_noncontextual:
             self.merge_noncontextual(container)
         self.merge_contextual(container)
-
 
     # Merge non-container variables recursively
     def merge_noncontextual(self, container, recurse=True):
@@ -161,7 +176,6 @@ class Container:
                 if isinstance(my_value, Container):
                     my_value.merge_noncontextual(container)
         return self
-
 
     def merge_contextual(self, container):
         for name, value, partition in container.get_name_value_partitions():
@@ -175,6 +189,16 @@ class Container:
                     self.set(name, value, partition)
         return self
 
+    def validate_type(self, item, category):
+        category_types_map = {
+            "name": [util.is_string, util.is_list_of_strings], 
+            "value": [util.is_anything], 
+            "partition": [util.is_string, util.is_list_of_strings, util.is_none], 
+            "context": [util.is_list_of_strings, util.is_none], 
+        }
+        correct = any(type_func(item) for type_func in category_types_map[category])
+        if not correct:
+            raise ValueError("%s has incorrect type: %s" % (category.capitalize(), item))
 
     def get_key(self, name, partition):
         key = ""
@@ -269,9 +293,10 @@ class Container:
         return len(self.get_key_values())
 
 
-    def to_string(self, expand=False, recurse=False, sort=True):
-        indent = "   "
-        strings = []
+    def to_string(self, recurse=True, sort=True, extent=110, in_recursion=False):
+        expand = True
+        indent = 4 * " "
+        lines = []
         max_key_len = -1
         for key, value in self.get_key_values():
             if len(key) > max_key_len:
@@ -279,39 +304,50 @@ class Container:
         left_just = max_key_len
         for name, value, partition in self.get_name_value_partitions(sort=sort):
             key = self.get_key(name, partition)
-            if isinstance(value, ndarray):
-                element_string = "NumPy.ndarray->shape(" + ", ".join(map(str, value.shape)) + ")"
-                if expand:
-                    element_string += " = \n%s%s" % (indent, str(value))
-            elif isinstance(value, Tensor):
-                element_string = "PyTorch.Tensor->shape(" + ", ".join(map(str, value.shape)) + ")"
-                if expand:
-                    element_string += " = \n%s%s" % (indent, str(value))
-            elif isinstance(value, Container):
-                element_string = "Container->size(%s)" % (util.format_memory(value.get_memory_of()))
-                if expand:
-                    element_string += " = \n%s%s" % (
+            value_string = str(value)
+            if isinstance(value, Container):
+                left_just = 0
+                key = "-> " + key
+                var_string = "Container @ size(%s)" % (util.format_memory(value.get_memory_of()))
+                if recurse:
+                    var_string += " = \n%s%s" % (
                         indent, 
-                        value.to_string(expand).replace("\n", "\n%s" % (indent))
+                        value.to_string(recurse, sort, extent, True).replace("\n", "\n%s" % (indent))
                     )
-            elif isinstance(value, str):
-                element_string = "\"%s\"" % (value)
-            elif isinstance(value, list):
-                element_string = "List->len(%d)" % len(value)
-                if expand:
-                    element_string += " = \n%s%s" % (indent, str(value))
-            elif isinstance(value, dict):
-                element_string = "Dictionary->len(%d)" % len(value)
-                if expand:
-                    element_string += " = \n%s%s" % (indent, str(value))
+                var_string = "%-*s = %s" % (left_just, key, var_string)
+                lines += var_string.split("\n")
             else:
-                element_string = str(value)
-            strings.append(
-                "%-*s = %s" %
-                (
-                    left_just,
-                    key,
-                    element_string
-                )
-            )
-        return "\n".join(strings)
+                if isinstance(value, ndarray):
+                    var_string = "NumPy.ndarray @ shape(" + ", ".join(map(str, value.shape)) + ")"
+                    if expand:
+                        var_string += " = \n%s%s" % (indent, value_string)
+                elif isinstance(value, Tensor):
+                    var_string = "PyTorch.Tensor @ shape(" + ", ".join(map(str, value.shape)) + ")"
+                    if expand:
+                        var_string += " = \n%s%s" % (indent, value_string)
+                elif isinstance(value, str):
+                    var_string = "String @ len(%d)" % len(value)
+                    if expand:
+                        var_string += " = \"%s\"" % (value_string)
+                elif isinstance(value, list):
+                    var_string = "List @ len(%d)" % len(value)
+                    if expand:
+                        var_string += " = %s" % (value_string)
+                elif isinstance(value, dict):
+                    var_string = "Dictionary @ len(%d)" % len(value)
+                    if expand:
+                        var_string += " = %s" % (value_string)
+                elif isinstance(value, set):
+                    var_string = "Set @ len(%d)" % len(value)
+                    if expand:
+                        var_string += " = %s" % (value_string)
+                else:
+                    var_string = value_string
+                lines += ["%-*s = %s" % (left_just, key, var_string)]
+        if not in_recursion: # Only cut lines of final result
+            for i in range(len(lines)):
+                if len(lines[i]) > extent: # Needs to be cut short
+                    j = lines[i].rfind(" = ") + 3
+                    cut_idx = max(j, extent)
+                    lines[i] = lines[i][:cut_idx] + " ..."
+        return "\n".join(lines)

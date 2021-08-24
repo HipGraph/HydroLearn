@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.distributed as dist
 import numpy as np
@@ -6,6 +7,7 @@ from time import time
 from progressbar import ProgressBar
 import Utility as util
 from Models.Model import Model
+from Container import Container
 
 
 class LSTM(Model):
@@ -223,6 +225,24 @@ def init(var):
         var.get("output_activation")
     )
     return model
+
+
+def model_name():
+    return os.path.basename(__file__).replace(".py", "")
+
+
+class HyperparameterVariables(Container):
+
+    def __init__(self):
+        n = 128
+        ratios = [1.0, 1.0]
+        self.set("encoding_size", int(ratios[0]*n))
+        self.set("decoding_size", int(ratios[1]*n))
+        self.set("n_layers", 1)
+        self.set("use_bias", True)
+        self.set("dropout", 0.0)
+        self.set("bidirectional", False)
+        self.set("output_activation", "identity")
 
 
 def test():

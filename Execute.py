@@ -12,7 +12,7 @@ from Variables import Variables
 from Arguments import ArgumentParser
 from Container import Container
 from SpatiotemporalData import SpatiotemporalData
-from Data import Data
+from Data.Data import Data
 
 
 np.set_printoptions(precision=4, suppress=True, linewidth=200)
@@ -23,14 +23,15 @@ def main(argv):
     args = ArgumentParser(argv[1:])
     var.merge(args)
     # Unpack all variables
+    print(var.to_string(True))
+    quit()
     plt = Plotting()
-    comm_var = var.get("common")
-    src_var = var.get(comm_var.get("data_source"))
-    hyp_var = var.get("hyperparameters").get(comm_var.get("model"))
+    exec_var = var.get("execution")
+    hyp_var = var.get("models").get(exec_var.get("model")).get("hyperparameters")
     train_var = var.get("training")
     eval_var = var.get("evaluating")
     chkpt_var = var.get("checkpointing")
-    dist_var = var.get("distributed")
+    dist_var = var.get("distribution")
     plt_var = var.get("plotting")
     grph_var = var.get("graph")
     dbg_var = var.get("debug")
@@ -60,11 +61,11 @@ def main(argv):
         print(data.to_string(dbg_var.get("print_data")[1]))
         print(util.make_msg_block(msg, "#"))
     # Initialize model
-    model_module = import_module("Models."+comm_var.get("model"))
+    model_module = import_module("Models."+exec_var.get("model"))
     init_var = Container().copy([hyp_var, train_spatmp, grph, spa])
     model = model_module.init(init_var)
     # Create model checkpoint and evaluation directories
-    config_var = Container().copy([comm_var, train_spatmp, hyp_var, grph_var])
+    config_var = Container().copy([exec_var, train_spatmp, hyp_var, grph_var])
     chkpt_dir = util.path([chkpt_var.get("checkpoint_dir"), model.name(), model.get_id(config_var)])
     eval_dir = util.path([eval_var.get("evaluation_dir"), model.name(), model.get_id(config_var)])
     if proc_rank == root_proc_rank:

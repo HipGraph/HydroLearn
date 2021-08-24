@@ -12,6 +12,7 @@ from progressbar import ProgressBar
 import Utility as util
 from Models.Model import Model
 from Models.GeoMAN.GeoMAN import GeoMAN
+from Container import Container
 import tensorflow as tf
 
 
@@ -301,6 +302,22 @@ def init(var):
         var.get("dropout_rate")
     )
     return model
+
+
+def model_name():
+    return os.path.basename(__file__).replace(".py", "")
+
+
+class HyperparameterVariables(Container):
+    
+    def __init__(self):
+        n = 128
+        ratios = [1.0, 1.0]
+        self.set("n_hidden_encoder", int(ratios[0]*n))
+        self.set("n_hidden_decoder", int(ratios[1]*n))
+        self.set("n_stacked_layers", 1)
+        self.set("s_attn_flag", 2)
+        self.set("dropout_rate", 0.0)
 
 
 def test():

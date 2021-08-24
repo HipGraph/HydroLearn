@@ -26,22 +26,24 @@ class SpatiotemporalData(Container):
     def __init__(self, var):
         print(util.make_msg_block("Spatiotemporal Data Initialization : Started", "#"))
         self.copy(var)
-#        print(self.to_string())
+        print(self.to_string(True))
+        con = Container()
         start = time.time()
-        self.initialize_miscellaneous(self)
-        print("\tInitialized Miscellaneous: %.3fs" % ((time.time() - start)))
+        self.initialize_miscellaneous(con, self)
+        print("    Initialized Miscellaneous: %.3fs" % ((time.time() - start)))
+        print(con.to_string(True))
         start = time.time()
-        self.initialize_original(self)
-        print("\tInitialized Original: %.3fs" % ((time.time() - start)))
+        self.initialize_original(con, self)
+        print("    Initialized Original: %.3fs" % ((time.time() - start)))
         start = time.time()
-        self.initialize_reduced(self)
-        print("\tInitialized Reduced: %.3fs" % ((time.time() - start)))
+        self.initialize_reduced(con, self)
+        print("    Initialized Reduced: %.3fs" % ((time.time() - start)))
         start = time.time()
-        self.initialize_metrics(self)
-        print("\tInitialized Metrics: %.3fs" % ((time.time() - start)))
+        self.initialize_metrics(con, self)
+        print("    Initialized Metrics: %.3fs" % ((time.time() - start)))
         start = time.time()
-        self.initialize_and_distribute_windowed(self)
-        print("\tInitialized Windowed: %.3fs" % ((time.time() - start)))
+        self.initialize_and_distribute_windowed(con, self)
+        print("    Initialized Windowed: %.3fs" % ((time.time() - start)))
         print(util.make_msg_block("Spatiotemporal Data Initialization : Completed", "#"))
         return
         plt = Plotting()
@@ -66,117 +68,122 @@ class SpatiotemporalData(Container):
         quit()
 
 
-    def initialize_miscellaneous(self, var):
-        var.set(
-            "predictor_indices",
-            var.get_indices_from_features(var.get("predictor_features"), var.get("feature_index_map"))
+    def initialize_miscellaneous(self, con, var):
+        map_var = var.get("mapping")
+        load_var = var.get("loading")
+        con.set(
+            "predictor_indices", 
+            util.get_dict_values(load_var.get("feature_index_map"), map_var.get("predictor_features"))
         )
-        var.set("n_predictors", len(var.get("predictor_features")))
-        var.set(
-            "response_indices",
-            var.get_indices_from_features(var.get("response_features"), var.get("feature_index_map"))
+        con.set("n_predictors", len(map_var.get("predictor_features")))
+        con.set(
+            "response_indices", 
+            util.get_dict_values(load_var.get("feature_index_map"), map_var.get("response_features"))
         )
-        var.set("n_responses", len(var.get("response_features")))
-        var.set("features", list(var.get("feature_index_map").keys()))
-        var.set(
-            "feature_indices",
-            var.get_indices_from_features(var.get("features"), var.get("feature_index_map"))
+        con.set("n_responses", len(map_var.get("response_features")))
+        con.set("features", list(load_var.get("feature_index_map").keys()))
+        con.set(
+            "feature_indices", 
+            util.get_dict_values(load_var.get("feature_index_map"), load_var.get("feature_index_map").keys())
         )
-        var.set("n_features", len(var.get("features")))
-        return var
+        con.set("n_features", len(con.get("features")))
+        return con
 
 
-    def initialize_original(self, var):
-        if var.get("process_rank") == var.get("root_process_rank"):
-            var.set("original_data_axis_map", {"spatial": 0, "temporal": 1, "feature": 2})
-            var.set(
+    def initialize_original(self, con, var):
+        load_var = var.get("loading")
+        part_var = var.get("partitioning")
+        dist_var = var.get("distribution")
+        struct_var = var.get("structure")
+        if dist_var.get("process_rank") == dist_var.get("root_process_rank"):
+            con.set(
                 "temporal_interval",
                 util.get_interval_from_selection(
-                    var.get("temporal_selection")
+                    part_var.get("temporal_selection")
                 )
             )
-            var.set("original", self.load_original(var))
-            var.set("original_temporal_labels", self.load_original_temporal_labels(var))
-            var.set(
+            con.set("original", self.load_original(load_var))
+            con.set("original_temporal_labels", self.load_original_temporal_labels(load_var))
+            con.set(
                 "original_temporal_indices", 
                 self.get_original_temporal_indices(
-                    var.get("temporal_selection"),
-                    var.get("original_temporal_labels")
+                    part_var.get("temporal_selection"),
+                    con.get("original_temporal_labels")
                 )
             )
-            var.set("original_spatial_labels", self.load_original_spatial_labels(var))
-            var.set(
+            con.set("original_spatial_labels", self.load_original_spatial_labels(load_var))
+            con.set(
                 "original_spatial_indices", 
                 self.get_original_spatial_indices(
-                    var.get("spatial_selection"),
-                    var.get("original_spatial_labels")
+                    part_var.get("spatial_selection"),
+                    con.get("original_spatial_labels")
                 )
             )
-            for partition in var.get("partitions"):
-                var.set(
+            for partition in part_var.get("partitions"):
+                con.set(
                     "temporal_interval",
                     util.get_interval_from_selection(
-                        var.get("temporal_selection", partition)
+                        part_var.get("temporal_selection", partition)
                     ),
                     partition
                 )
-                var.set(
+                con.set(
                     "original_temporal_indices", 
                     self.get_original_temporal_indices(
-                        var.get("temporal_selection", partition),
-                        var.get("original_temporal_labels")
+                        part_var.get("temporal_selection", partition),
+                        con.get("original_temporal_labels")
                     ),
                     partition
                 )
-                var.set(
+                con.set(
                     "original_temporal_labels",
                     self.filter_axis(
-                        var.get("original_temporal_labels"),
+                        con.get("original_temporal_labels"),
                         0,
-                        var.get("original_temporal_indices", partition)
+                        con.get("original_temporal_indices", partition)
                     ),
                     partition
                 )
-                var.set(
+                con.set(
                     "original_n_temporal",
-                    len(var.get("original_temporal_labels", partition)),
+                    len(con.get("original_temporal_labels", partition)),
                     partition
                 )
-                var.set(
+                con.set(
                     "original_spatial_indices",
                     self.get_original_spatial_indices(
-                        var.get("spatial_selection", partition),
-                        var.get("original_spatial_labels")
+                        part_var.get("spatial_selection", partition),
+                        con.get("original_spatial_labels")
                     ),
                     partition
                 )
-                var.set(
+                con.set(
                     "original_spatial_labels",
                     self.filter_axis(
-                        var.get("original_spatial_labels"),
+                        con.get("original_spatial_labels"),
                         0,
-                        var.get("original_spatial_indices", partition)
+                        con.get("original_spatial_indices", partition)
                     ),
                     partition
                 )
-                var.set(
+                con.set(
                     "original_n_spatial",
-                    len(var.get("original_spatial_labels", partition)),
+                    len(con.get("original_spatial_labels", partition)),
                     partition
                 )
-                var.set(
+                con.set(
                     "original",
                     self.filter_axes(
-                        var.get("original"),
+                        con.get("original"),
                         [0, 1],
                         [
-                            var.get("original_temporal_indices", partition),
-                            var.get("original_spatial_indices", partition)
+                            con.get("original_temporal_indices", partition),
+                            con.get("original_spatial_indices", partition)
                         ]
                     ),
                     partition
                 )
-        return var
+        return con
 
 
     def initialize_reduced(self, var):
