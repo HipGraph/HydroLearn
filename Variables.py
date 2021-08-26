@@ -78,33 +78,21 @@ class Variables(Container):
         con.set("n_processes", 1, "test")
         con.set(
             "nonroot_process_ranks",
-            util.get_nonroot_process_ranks(
-                con.get("root_process_rank"),
-                con.get("n_processes")
-            )
+            util.get_nonroot_process_ranks(con.get("root_process_rank"), con.get("n_processes"))
         )
         con.set(
             "nonroot_process_ranks",
-            util.get_nonroot_process_ranks(
-                con.get("root_process_rank"),
-                con.get("n_processes", "train")
-            ),
+            util.get_nonroot_process_ranks(con.get("root_process_rank"), con.get("n_processes", "train")),
             "train"
         )
         con.set(
             "nonroot_process_ranks",
-            util.get_nonroot_process_ranks(
-                con.get("root_process_rank"),
-                con.get("n_processes", "valid")
-            ),
+            util.get_nonroot_process_ranks(con.get("root_process_rank"), con.get("n_processes", "valid")),
             "valid"
         )
         con.set(
             "nonroot_process_ranks",
-            util.get_nonroot_process_ranks(
-                con.get("root_process_rank"),
-                con.get("n_processes", "test")
-            ),
+            util.get_nonroot_process_ranks(con.get("root_process_rank"), con.get("n_processes", "test")),
             "test"
         )
         con.set("backend", "gloo")
@@ -125,6 +113,7 @@ class Variables(Container):
         return con
 
     def processing_var(self, con):
+        con.set("metric_source_partition", "train")
         con.set("n_daysofyear", 366)
         con.set("temporal_reduction", ["avg", 7, 1])
         con.set("transform_features", True)
@@ -272,6 +261,7 @@ class DatasetVariables(Container):
         return con
 
     def caching_var(self, con, data_var):
+        con.copy(data_var.get("caching"))
         cache_filename_format = data_var.get("caching").get("data_type") + "_Form[%s]_Data[%s].pkl"
         con.set(
             "original_cache_filename", 

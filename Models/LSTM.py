@@ -75,6 +75,16 @@ class LSTM(Model):
     #   spatiotemporal_Y.shape = (n_samples, n_temporal_out, n_spatial, n_responses)
     def optimize(self, train, valid=None, test=None, lr=0.001, lr_decay=0.01, n_epochs=100, early_stop_epochs=10, mbatch_size=256, reg=0.0, loss="mse", opt="sgd", init="xavier", init_seed=-1, batch_shuf_seed=-1, n_procs=1, proc_rank=0, chkpt_epochs=1, chkpt_dir="Checkpoints", use_gpu=True):
         # Reformat data to accepted shape, convert to tensors, put data + model onto device, then unpack
+        print(len(train))
+        print(train[0].shape)
+        print(train[1].shape)
+        print(len(valid))
+        print(valid[0].shape)
+        print(valid[1].shape)
+        print(len(test))
+        print(test[0].shape)
+        print(test[1].shape)
+        print(self.n_predictors, self.n_responses)
         self, train_X, train_Y = self.prepare(train, use_gpu)
         if valid is not None:
             self, valid_X, valid_Y = self.prepare(valid, use_gpu)
@@ -212,17 +222,19 @@ class LSTM(Model):
         return data
 
 
-def init(var):
+def init(dataset, var):
+    spatmp = dataset.get("spatiotemporal")
+    hyp_var = var.get("models").get(model_name()).get("hyperparameters")
     model = LSTM(
-        var.get("n_predictors"),
-        var.get("n_responses"),
-        var.get("encoding_size"),
-        var.get("decoding_size"),
-        var.get("n_layers"),
-        var.get("use_bias"),
-        var.get("dropout"),
-        var.get("bidirectional"),
-        var.get("output_activation")
+        spatmp.get("misc").get("n_predictors"),
+        spatmp.get("misc").get("n_responses"),
+        hyp_var.get("encoding_size"),
+        hyp_var.get("decoding_size"),
+        hyp_var.get("n_layers"),
+        hyp_var.get("use_bias"),
+        hyp_var.get("dropout"),
+        hyp_var.get("bidirectional"),
+        hyp_var.get("output_activation")
     )
     return model
 

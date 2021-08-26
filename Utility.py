@@ -11,6 +11,7 @@ from progressbar import ProgressBar
 from scipy.special import comb
 import networkx as nx
 import itertools
+import os
 from os import sep as os_sep
 #from Variables import Variables
 from inspect import getargspec, signature
@@ -383,6 +384,7 @@ def get_dict_values(a, keys):
 
 
 def to_cache(data, path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as f:
         pickle.dump(data, f, protocol=4)
 
@@ -439,7 +441,7 @@ def to_tensor(items, types):
                 raise NotImplementedError("Only numpy.ndarray and torch.Tensor types are implemented")
         return tensors
     else: # Single item to convert to tensor
-        return to_tensor([items])[0]
+        return to_tensor([items], types)[0]
 
 
 def to_ndarray(items):

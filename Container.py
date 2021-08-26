@@ -78,8 +78,6 @@ class Container:
         return self
 
     def _set(self, name, value, partition=None, context=None):
-#        self = self.get_context_leaf(context)
-#        print("Set: ", name, value, partition, context)
         if not isinstance(name, str):
             raise ValueError("Name must be type str()")
         if self.partition_sep in name:
@@ -88,8 +86,13 @@ class Container:
             raise ValueError("Partition names must be None or type str()")
         if isinstance(context, list) and len(context) > 0 and not isinstance(context[0], str):
             raise ValueError("Context names must be a list() of one or more type str() items")
-        if not partition is None:
+        if not partition is None and partition != "*":
             self.update_partitions(partition)
+        if partition == "*":
+            for _name, _value, _partition in self.get_name_value_partitions(False):
+                if name == _name:
+                    self._set(_name, value, _partition)
+            return self
         key = self.get_key(name, partition)
         container = self.get_container(context, True)
         previous = None
@@ -293,7 +296,14 @@ class Container:
         return len(self.get_key_values())
 
 
-    def to_string(self, recurse=True, sort=True, extent=110, in_recursion=False):
+    def to_string(self, recurse=True, sort=True, extent=[110, 1], in_recursion=False):
+        def cut_x(line, x_extent):
+            j = line.rfind(" = ") + 3
+            cut_idx = max(j, x_extent)
+            return line[:cut_idx] + " ..."
+        def cut_y(var_string, y_extent):
+            var_string_lines = var_string.split("\n")
+            return "\n".join(var_string_lines[:extent[1]])
         expand = True
         indent = 4 * " "
         lines = []
@@ -320,15 +330,11 @@ class Container:
                 if isinstance(value, ndarray):
                     var_string = "NumPy.ndarray @ shape(" + ", ".join(map(str, value.shape)) + ")"
                     if expand:
-                        var_string += " = \n%s%s" % (indent, value_string)
+                        var_string += " = %s" % (value_string)
                 elif isinstance(value, Tensor):
                     var_string = "PyTorch.Tensor @ shape(" + ", ".join(map(str, value.shape)) + ")"
                     if expand:
-                        var_string += " = \n%s%s" % (indent, value_string)
-                elif isinstance(value, str):
-                    var_string = "String @ len(%d)" % len(value)
-                    if expand:
-                        var_string += " = \"%s\"" % (value_string)
+                        var_string += " = %s" % (value_string)
                 elif isinstance(value, list):
                     var_string = "List @ len(%d)" % len(value)
                     if expand:
@@ -341,13 +347,17 @@ class Container:
                     var_string = "Set @ len(%d)" % len(value)
                     if expand:
                         var_string += " = %s" % (value_string)
+                elif isinstance(value, str):
+                    var_string = "String @ len(%d)" % len(value)
+                    if expand:
+                        var_string += " = \"%s\"" % (value_string)
                 else:
                     var_string = value_string
+                if var_string.count("\n") > extent[1]:
+                    var_string = cut_y(var_string, extent[1])
                 lines += ["%-*s = %s" % (left_just, key, var_string)]
         if not in_recursion: # Only cut lines of final result
             for i in range(len(lines)):
-                if len(lines[i]) > extent: # Needs to be cut short
-                    j = lines[i].rfind(" = ") + 3
-                    cut_idx = max(j, extent)
-                    lines[i] = lines[i][:cut_idx] + " ..."
+                if len(lines[i]) > extent[0]: # Needs to be cut short
+                    lines[i] = cut_x(lines[i], extent[0])
         return "\n".join(lines)

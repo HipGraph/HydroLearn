@@ -62,7 +62,7 @@ class Plotting(Container):
     feature_ylabel_map = {}
     for feature in feature_fullname_map.keys():
         feature_ylabel_map[feature] = "%s (%s)" % (feature_fullname_map[feature], feature_SIunit_map[feature])
-    data_source_legend_map = {"littleriver": "Little River", "historical": "SWAT", "observed": "Ground Truth"}
+    dataset_legend_map = {"littleriver_observed": "Little(GT)", "wabashriver_swat": "Wabash(SWAT)", "wabashriver_observed": "Wabash(GT)"}
     partition_fullname_map = {"train": "Training", "valid": "Validation", "test": "Testing"}
     partition_codename_map = {"train": "Train", "valid": "Valid", "test": "Test"}
 
@@ -627,7 +627,7 @@ class Plotting(Container):
             "%s",
             ",".join(spatial_labels),
             name,
-            var.get("data_source", partition)
+            var.get("dataset", partition)
         )
         if len(spatial_labels) > 100:
             return
@@ -1053,52 +1053,54 @@ class Plotting(Container):
     #   predictions.shape=[n_windows, n_temporal_in, n_spatial, n_responses]
     #   groundtruth.shape=[n_windows, n_temporal_in, n_spatial, n_responses]
     def plot_model_fit(self, prediction, spatmp, partition, plt_range, plt_dir, var):
-        options = var.get("options")
-        data_source = spatmp.get("data_source", partition)
-        n_temporal_in = spatmp.get("n_temporal_in")
-        n_temporal_out = spatmp.get("n_temporal_out")
-        n_predictors = spatmp.get("n_predictors")
-        n_responses = spatmp.get("n_responses")
-        response_features = spatmp.get("response_features")
-        response_indices = spatmp.get("response_indices")
-        n_spatial = spatmp.get("original_n_spatial", partition)
-        spatial_labels = spatmp.get("original_spatial_labels", partition)
-        spatial_indices = spatmp.get("original_spatial_indices", partition)
-        temporal_reduction_factor = spatmp.get("temporal_reduction")[1]
+        exec_var, plt_var, proc_var = var.get("execution"), var.get("plotting"), var.get("processing")
+        dataset, options = exec_var.get("dataset", partition), plt_var.get("options")
+        n_temporal_in = spatmp.get("windowed").get("n_temporal_in")
+        n_temporal_out = spatmp.get("windowed").get("n_temporal_out")
+        n_predictors = spatmp.get("misc").get("n_predictors")
+        n_responses = spatmp.get("misc").get("n_responses")
+        response_features = spatmp.get("misc").get("response_features")
+        response_indices = spatmp.get("misc").get("response_indices")
+        n_spatial = spatmp.get("original").get("original_n_spatial", partition)
+        spatial_labels = spatmp.get("original").get("original_spatial_labels", partition)
+        spatial_indices = spatmp.get("original").get("original_spatial_indices", partition)
         mins = spatmp.filter_axes(
-            spatmp.get("reduced_minimums"),
+            spatmp.get("metrics").get("reduced_minimums"),
             [1, 2],
             [spatial_indices, response_indices]
         )
         maxes = spatmp.filter_axes(
-            spatmp.get("reduced_maximums"),
+            spatmp.get("metrics").get("reduced_maximums"),
             [1, 2],
             [spatial_indices, response_indices]
         )
         meds = spatmp.filter_axes(
-            spatmp.get("reduced_medians"),
+            spatmp.get("metrics").get("reduced_medians"),
             [1, 2],
             [spatial_indices, response_indices]
         )
         means = spatmp.filter_axes(
-            spatmp.get("reduced_means"),
+            spatmp.get("metrics").get("reduced_means"),
             [1, 2],
             [spatial_indices, response_indices]
         )
         stddevs = spatmp.filter_axes(
-            spatmp.get("reduced_standard_deviations"),
+            spatmp.get("metrics").get("reduced_standard_deviations"),
             [1, 2],
             [spatial_indices, response_indices]
         )
-        transformation_resolution = spatmp.get("transformation_resolution")
-        original_temporal_labels = spatmp.get("original_temporal_labels", partition)
-        reduced = spatmp.get("reduced", partition)
-        reduced_temporal_labels = spatmp.get("reduced_temporal_labels", partition)
-        reduced_temporal_indices = spatmp.get("reduced_temporal_indices", partition)
-        reduced_n_temporal = spatmp.get("reduced_n_temporal", partition)
-        output_windowed = spatmp.get("output_windowed", partition)
-        output_windowed_temporal_labels = spatmp.get("output_windowed_temporal_labels", partition)
-        n_windows = spatmp.get("n_windows", partition)
+        transformation_resolution = proc_var.get("transformation_resolution")
+        original_temporal_labels = spatmp.get("original").get("original_temporal_labels", partition)
+        reduced = spatmp.get("reduced").get("reduced", partition)
+        reduced_temporal_labels = spatmp.get("reduced").get("reduced_temporal_labels", partition)
+        reduced_temporal_indices = spatmp.get("reduced").get("reduced_temporal_indices", partition)
+        reduced_n_temporal = spatmp.get("reduced").get("reduced_n_temporal", partition)
+        output_windowed = spatmp.get("windowed").get("output_windowed", partition)
+        output_windowed_temporal_labels = spatmp.get("windowed").get(
+            "output_windowed_temporal_labels", 
+            partition
+        )
+        n_windows = spatmp.get("windowed").get("n_windows", partition)
         temporal_channel_indices = spatmp.get_reduced_channel_indices(reduced_n_temporal, 1)
         contiguous_window_indices = spatmp.get_contiguous_window_indices(
             n_temporal_out,
@@ -1110,7 +1112,7 @@ class Plotting(Container):
         gt = spatmp.filter_axes(
             reduced[temporal_channel_indices],
             [2],
-            [spatmp.get("response_indices")]
+            [spatmp.get("misc").get("response_indices")]
         )
         output_windowed_temporal_labels = output_windowed_temporal_labels[contiguous_window_indices]
         temporal_labels = reduced_temporal_labels[temporal_channel_idx,:]
@@ -1148,7 +1150,7 @@ class Plotting(Container):
             spatial_indices = np.arange(n_spatial)
             if feature_plot_order_map[response_features[o]] == "descending":
                 spatial_indices = np.flip(spatial_indices)
-            n_spa_plotted, n_spa_per_plt = 0, var.get("n_spatial_per_plot")
+            n_spa_plotted, n_spa_per_plt = 0, plt_var.get("n_spatial_per_plot")
             for s in spatial_indices:
                 spatial_response_prediction = np.reshape(response_prediction[:,:,s], (-1))
                 spatial_response_gt = np.reshape(response_gt[:,s], (-1))
@@ -1168,7 +1170,7 @@ class Plotting(Container):
                 if "groundtruth" in options:
                     self._plot_groundtruth(
                         spatial_response_gt, 
-                        data_source, 
+                        dataset, 
                         n_spatial, 
                         spatial_labels[s], 
                         n_spa_per_plt,
@@ -1189,7 +1191,7 @@ class Plotting(Container):
                         spatial_response_gt, 
                         means[dayofyear_indices,s,o], 
                         stddevs[dayofyear_indices,s,o], 
-                        data_source, 
+                        dataset, 
                         n_spatial, 
                         spatial_labels[s], 
                         n_spa_per_plt,
@@ -1304,7 +1306,6 @@ class Plotting(Container):
                 n_spa_plotted += 1
                 if (n_spa_per_plt > 0 and n_spa_plotted % n_spa_per_plt == 0) or (n_spa_per_plt < 0 and n_spa_plotted == len(spatial_labels)):
                     plt.ylabel(self.feature_ylabel_map[response_features[o]], fontsize=8)
-#                    plt.xlabel("Time (%d:1 Reduction)" % (temporal_reduction_factor), fontsize=12)
                     self._plot_xticks(temporal_labels, plt_range)
                     self._plot_yticks([y_min, y_max])
                     self._plot_xylim([0, temporal_labels.shape[0]], [y_min, y_max], plt_range)
@@ -1328,8 +1329,8 @@ class Plotting(Container):
                 util.to_cache(prediction_interval_markers, path)
 
 
-    def _plot_groundtruth(self, gt, data_source, n_spa, spa_label, n_spa_per_plt, color):
-        label = self.data_source_legend_map[data_source]
+    def _plot_groundtruth(self, gt, dataset, n_spa, spa_label, n_spa_per_plt, color):
+        label = self.dataset_legend_map[dataset]
         if n_spa > 1 and n_spa_per_plt > 1:
             label = ("Subbasin %s " % (str(spa_label))) + label
         plt.plot(gt, color=color, linestyle="-", label=label, linewidth=self.gt_line_width)
@@ -1343,7 +1344,7 @@ class Plotting(Container):
         plt.plot(indices, pred, color=color, linestyle="-", label=label, linewidth=self.pred_line_width)
 
 
-    def _plot_groundtruth_extremes(self, gt, means, stddevs, data_source, n_spa, spa_label, n_spa_per_plt, plt_range):
+    def _plot_groundtruth_extremes(self, gt, means, stddevs, dataset, n_spa, spa_label, n_spa_per_plt, plt_range):
         interval_events_map = util.compute_events(gt, means, stddevs)
         interval_label_map = {
             "-8,-2": "Extremely Dry",
@@ -1364,7 +1365,7 @@ class Plotting(Container):
             start = round(plt_range[0] * events.shape[0])
             end = round(plt_range[1] * events.shape[0])
             if np.ma.count(events[start:end]) > 0 and not mask:
-                label = "%s %s" % (self.data_source_legend_map[data_source], interval_label_map[interval])
+                label = "%s %s" % (self.dataset_legend_map[dataset], interval_label_map[interval])
                 if n_spa > 1 and n_spa_per_plt > 1:
                     label = ("Subbasin %s " % (spa_label)) + label
                 plt.plot(events, color=color, linestyle="-", marker=marker, label=label, linewidth=2*lw, markersize=0.75*self.marker_size)

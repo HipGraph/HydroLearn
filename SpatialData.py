@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import time
 from progressbar import ProgressBar
 from Container import Container
 import Utility as util
@@ -8,50 +9,60 @@ import Utility as util
 class SpatialData(Container):
 
     def __init__(self, var):
-        self.copy(var)
-        # Initialize Original
-        print("Initialize Original")
-        self.initialize_original(self)
-        self.set("n_exogenous", self.get("original").shape[-1])
+        print(util.make_msg_block(" Spatial Data Initialization : Started ", "#"))
+        start = time.time()
+        con = self.init_original(Container(), var)
+        self.set("original", con)
+        print("    Initialized Original: %.3fs" % ((time.time() - start)))
+        self.set(["partitioning"], [var.get("partitioning")])
+        print(util.make_msg_block("Spatial Data Initialization : Completed", "#"))
 
-    def initialize_original(self, var):
-        var.set("original", self.load_original(var))
-        var.set("original_spatial_labels", self.load_original_spatial_labels(var))
-        var.set(
-            "original_spatial_indices", 
-            self.get_original_spatial_indices(
-                var.get("spatial_selection"), 
-                var.get("original_spatial_labels")
-            )
-        )
-        for partition in var.get("partitions"):
-            var.set(
+    def init_original(self, con, var):
+        load_var = var.get("loading")
+        cache_var = var.get("caching")
+        part_var = var.get("partitioning")
+        struct_var = var.get("structure")
+        dist_var = var.get("distribution")
+        tmp_var = Container().copy([load_var, cache_var, struct_var])
+        if dist_var.get("process_rank") == dist_var.get("root_process_rank"):
+            con.set("original", self.load_original(tmp_var))
+            con.set("original_spatial_labels", self.load_original_spatial_labels(tmp_var))
+            con.set(
                 "original_spatial_indices", 
                 self.get_original_spatial_indices(
-                    var.get("spatial_selection", partition), 
-                    var.get("original_spatial_labels")
-                ),
-                partition
+                    part_var.get("spatial_selection"), 
+                    con.get("original_spatial_labels")
+                )
             )
-            var.set(
-                "original_spatial_labels",
-                self.filter_axis(
-                    var.get("original_spatial_labels"), 
-                    0,
-                    var.get("original_spatial_indices", partition)
-                ), 
-                partition
-            )
-            var.set(
-                "original",
-                self.filter_axis(
-                    var.get("original"), 
-                    0,
-                    var.get("original_spatial_indices", partition)
-                ), 
-                partition
-            )
-        return var
+            for partition in part_var.get("partitions"):
+                con.set(
+                    "original_spatial_indices", 
+                    self.get_original_spatial_indices(
+                        part_var.get("spatial_selection", partition), 
+                        con.get("original_spatial_labels")
+                    ),
+                    partition
+                )
+                con.set(
+                    "original_spatial_labels",
+                    self.filter_axis(
+                        con.get("original_spatial_labels"), 
+                        0,
+                        con.get("original_spatial_indices", partition)
+                    ), 
+                    partition
+                )
+                con.set(
+                    "original",
+                    self.filter_axis(
+                        con.get("original"), 
+                        0,
+                        con.get("original_spatial_indices", partition)
+                    ), 
+                    partition
+                )
+            con.set("original_n_exogenous", con.get("original").shape[-1])
+        return con
 
     def filter_axes(self, A, target_axes, filter_indices):
         if not (isinstance(target_axes, list) and isinstance(filter_indices, list)):
@@ -71,25 +82,9 @@ class SpatialData(Container):
             return A
         return np.swapaxes(np.swapaxes(A, 0, target_axis)[filter_indices], 0, target_axis)
 
-    def reduce_metric_to_resolution(self, metric, transformation_resolution, reduction):
-        if "temporal" in transformation_resolution and "spatial" in transformation_resolution:
-            pass # reduce out no dimensions and proceed
-        elif "temporal" in transformation_resolution: # reduce out the subbasin dimension
-            metric = reduction(metric, axis=1)
-        elif "spatial" in transformation_resolution: # reduce out the temporal dimension
-            metric = reduction(metric, axis=0)
-        else: # reduce out both temporal and spatial dimensions
-            metric = reduction(metric, axis=(0,1))
-        return metric
-
-    def get_indices_from_features(self, features, feature_index_map):
-        return np.array([feature_index_map[feature] for feature in features], dtype=np.int)
-
-    def get_features_from_indices(self, feature_indices, index_feature_map):
-        return np.array([index_feature_map[i] for i in feature_indices], dtype=np.object)
-
     def load_original(self, var, from_cache=True, to_cache=True):
         data_dir = var.get("data_dir")
+        cache_dir = var.get("cache_dir")
         n_spatial = var.get("original_n_spatial")
         spatial_feature = var.get("spatial_feature")
         header_feature_fields = var.get("header_feature_fields")
@@ -98,8 +93,8 @@ class SpatialData(Container):
         missing_value_code = var.get("missing_value_code")
         text_filename = var.get("original_text_filename")
         cache_filename = var.get("original_cache_filename")
-        text_path = data_dir + os.sep + text_filename
-        cache_path = data_dir + os.sep + cache_filename
+        text_path = os.sep.join([data_dir, text_filename])
+        cache_path = os.sep.join([cache_dir, cache_filename])
         if os.path.exists(cache_path) and from_cache:
             original = util.from_cache(cache_path)
         elif os.path.exists(text_path):
@@ -130,14 +125,15 @@ class SpatialData(Container):
 
     def load_original_spatial_labels(self, var, from_cache=True, to_cache=True):
         data_dir = var.get("data_dir")
+        cache_dir = var.get("cache_dir")
         n_spatial = var.get("original_n_spatial")
         spatial_feature = var.get("spatial_feature")
         header_field_index_map = var.get("header_field_index_map")
         missing_value_code = var.get("missing_value_code")
         text_filename = var.get("original_spatial_labels_text_filename")
         cache_filename = var.get("original_spatial_labels_cache_filename")
-        text_path = data_dir + os.sep + text_filename
-        cache_path = data_dir + os.sep + cache_filename
+        text_path = os.sep.join([data_dir, text_filename])
+        cache_path = os.sep.join([cache_dir, cache_filename])
         if os.path.exists(cache_path) and from_cache:
             original_spatial_labels = util.from_cache(cache_path)
         elif os.path.exists(text_path):

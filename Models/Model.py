@@ -18,9 +18,9 @@ class Model(torch_nn.Module):
         "feature": 3, 
     }
     config_name_partition_pairs = [
-        ["data_source", "train"],
-        ["data_source", "valid"],
-        ["data_source", "test"],
+        ["dataset", "train"],
+        ["dataset", "valid"],
+        ["dataset", "test"],
         ["transformation_resolution", None],
         ["feature_transformation_map", None],
         ["temporal_reduction", None],
