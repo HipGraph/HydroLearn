@@ -1,17 +1,16 @@
 import numpy as np
 import time
 import datetime as dt
-from progressbar import ProgressBar
 import sys
 import os
 import NerscDistributed as nersc_dist
 import Utility as util
+from progressbar import ProgressBar
 from importlib import import_module
 from Plotting import Plotting
 from Variables import Variables
 from Arguments import ArgumentParser
 from Container import Container
-from SpatiotemporalData import SpatiotemporalData
 from Data.Data import Data
 
 
@@ -19,7 +18,7 @@ np.set_printoptions(precision=4, suppress=True, linewidth=200)
 
 
 def main(argv):
-    # Initialize variables and by merging arguments into default variables
+    # Initialize all variables: parse arguments and merge them with default variables
     var = Variables()
     args = ArgumentParser(argv[1:])
     var.merge(args)
@@ -59,15 +58,15 @@ def main(argv):
         test_spa = data.get("dataset", "test").get("spatial")
         test_graph = data.get("dataset", "test").get("graph")
     if dbg_var.get("print_data")[0]:
-        msg = "Spatiotemporal Data"
+        msg = " " * 50 + "Data" + " " * 50
         print(util.make_msg_block(msg, "#"))
         print(data.to_string(dbg_var.get("print_data")[1]))
         print(util.make_msg_block(msg, "#"))
     if dbg_var.get("data_memory"):
-        print("Training Memory Usage =", util.get_memory_of(data.get("dataset", "train")))
+        print("Training Dataset Memory Usage =", util.get_memory_of(data.get("dataset", "train")))
         if proc_rank == root_proc_rank:
-            print("Validation Memory Usage =", util.get_memory_of(data.get("dataset", "valid")))
-            print("Testing Memory Usage =", util.get_memory_of(data.get("dataset", "test")))
+            print("Validation Dataset Memory Usage =", util.get_memory_of(data.get("dataset", "valid")))
+            print("Testing Dataset Memory Usage =", util.get_memory_of(data.get("dataset", "test")))
     # Initialize the model, and its checkpoint + evaluation directories
     model_module = import_module("Models."+exec_var.get("model"))
     model = model_module.init(data.get("dataset", "train"), var)

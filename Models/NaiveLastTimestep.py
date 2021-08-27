@@ -60,8 +60,12 @@ class NaiveLastTimestep(Model):
         return self
 
 
-def init(var):
-    return NaiveLastTimestep(var.get("n_responses"))
+def init(dataset, var):
+    spatmp = dataset.get("spatiotemporal")
+    model = NaiveLastTimestep(
+        spatmp.get("mapping").get("n_responses")
+    )
+    return model
 
 
 def model_name():

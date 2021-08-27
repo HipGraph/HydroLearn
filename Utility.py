@@ -13,17 +13,22 @@ import networkx as nx
 import itertools
 import os
 from os import sep as os_sep
-#from Variables import Variables
+from re import match
 from inspect import getargspec, signature
 
 
 np.set_printoptions(precision=3, suppress=True, linewidth=200)
 
 
-def merge_dicts(a, b):
-    if not (isinstance(a, dict) or isinstance(b, dict)):
-        raise ValueError("Expected two dictionaries")
-    return {**a, **b}
+def get_paths(search_dir, path_regex, recurse=False):
+    paths = []
+    for root, dirnames, filenames in os.walk(search_dir):
+        for filename in filenames:
+            if match(path_regex, filename):
+                paths += [os.path.join(root, filename)]
+        if not recurse:
+            break
+    return paths
 
 
 def is_anything(item):
@@ -363,6 +368,12 @@ def curate_error_report(errors, spatial_labels, feature_labels, partitions, spat
 # Construct a - b
 def list_subtract(a, b):
     return [a_i for a_i in a if a_i not in b]
+
+
+def merge_dicts(a, b):
+    if not (isinstance(a, dict) or isinstance(b, dict)):
+        raise ValueError("Expected two dictionaries")
+    return {**a, **b}
     
 
 def to_key_index_dict(keys, offset=0, stride=1):

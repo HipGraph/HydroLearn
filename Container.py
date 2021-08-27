@@ -145,7 +145,6 @@ class Container:
         elif container is None:
             pass
         else:
-            print(container.to_string())
             raise ValueError("Item for copying must be a Container, list of Containers, or None")
         return self
 

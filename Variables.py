@@ -2,6 +2,7 @@ import os
 import Utility as util
 from Container import Container
 from inspect import currentframe
+from importlib import import_module
 
 
 class Variables(Container):
@@ -11,13 +12,13 @@ class Variables(Container):
 
     def all_var(self, con):
         con.set("execution", self.execution_var(Container()))
+        con.set("datasets", self.datasets_var(Container(), con.get("execution")))
+        con.set("models", self.models_var(Container(), con.get("execution"), True))
         con.set("plotting", self.plotting_var(Container()))
         con.set("training", self.training_var(Container()))
         con.set("evaluating", self.evaluating_var(Container()))
         con.set("checkpointing", self.checkpointing_var(Container()))
         con.set("distribution", self.distribution_var(Container()))
-        con.set("datasets", self.datasets_var(Container()))
-        con.set("models", self.models_var(Container()))
         con.set("processing", self.processing_var(Container()))
         con.set("graph", self.graph_var(Container()))
         con.set("debug", self.debug_var(Container()))
@@ -99,17 +100,42 @@ class Variables(Container):
         con.set("nersc", False)
         return con
 
-    def datasets_var(self, con):
-        modules = get_modules("Data", "DatasetVariables.py", recurse=True)
+    def datasets_var(self, con, exec_var, only_import_used=False):
+        module_paths = util.get_paths("Data", "DatasetVariables.py", recurse=True)
+        import_statements = [path.replace(os.sep, ".").replace(".py", "") for path in module_paths]
+        if only_import_used:
+            modules = []
+            for import_statement in import_statements:
+                if exec_var.get("model") in import_statement:
+                    modules += [import_module(import_statement)]
+        else:
+            modules = [import_module(import_statement) for import_statement in import_statements]
         for module in modules:
             con.set(module.dataset_name(), DatasetVariables(module))
         return con
 
-    def models_var(self, con):
-        modules = get_modules("Models", "(?=[a-zA-Z_]+\.py)(?!.*Model\.py)(?!__init__\.py)")
+    def models_var(self, con, exec_var, only_import_used=False):
+        module_paths = util.get_paths("Models", "(?=[a-zA-Z_]+\.py)(?!.*Model\.py)(?!__init__\.py)")
+        import_statements = [path.replace(os.sep, ".").replace(".py", "") for path in module_paths]
+        if only_import_used:
+            modules = []
+            for import_statement in import_statements:
+                if exec_var.get("model") in import_statement:
+                    modules += [import_module(import_statement)]
+        else:
+            modules = [import_module(import_statement) for import_statement in import_statements]
         for module in modules:
             con.set(module.model_name(), ModelVariables(module))
         con.set("mapping", self.mapping_var(Container()))
+        return con
+
+    def mapping_var(self, con):
+        con.set("predictor_features", "date,tmin,tmax,PRECIPmm,FLOW_OUTcms".split(","))
+        con.set("response_features", "FLOW_OUTcms".split(","))
+        con.set("n_predictors", len(con.get("predictor_features")))
+        con.set("n_responses", len(con.get("response_features")))
+        con.set("n_temporal_in", 8)
+        con.set("n_temporal_out", 1)
         return con
 
     def processing_var(self, con):
@@ -177,15 +203,8 @@ class Variables(Container):
         return con
 
     def debug_var(self, con):
-        con.set("print_data", [True, False])
+        con.set("print_data", [True, True])
         con.set("data_memory", False)
-        return con
-
-    def mapping_var(self, con):
-        con.set("predictor_features", "date,tmin,tmax,PRECIPmm,FLOW_OUTcms".split(","))
-        con.set("response_features", "FLOW_OUTcms".split(","))
-        con.set("n_temporal_in", 8)
-        con.set("n_temporal_out", 1)
         return con
 
 
@@ -315,22 +334,6 @@ class DatasetVariables(Container):
     def structure_var(self, con, data_var):
         con.copy(data_var.get("structure"))
         return con
-
-
-def get_modules(search_dir, module_regex, recurse=False):
-    from importlib import import_module
-    from re import match
-    module_paths = []
-    for root, dirnames, filenames in os.walk(search_dir):
-        for filename in filenames:
-            if match(module_regex, filename):
-                module_paths += [os.path.join(root, filename)]
-        if not recurse:
-            break
-    modules = []
-    for module_path in module_paths:
-        modules += [import_module(module_path.replace(os.sep, ".").replace(".py", ""))]
-    return modules
 
 
 if __name__ == "__main__":

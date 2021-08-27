@@ -19,7 +19,7 @@ arima.__getnewargs__ = __getnewargs__
 
 class ARIMA(Model):
 
-    def __init__(self, n_predictors, n_responses, order=(0, 0, 0), seasonal_order=(0, 0, 0, 0), trend=None, enforce_stationarity=True, enforce_invertability=True, concentrate_scale=False, trend_offset=1):
+    def __init__(self, n_responses, order=(0, 0, 0), seasonal_order=(0, 0, 0, 0), trend=None, enforce_stationarity=True, enforce_invertability=True, concentrate_scale=False, trend_offset=1):
         self.n_responses, self.order, self.seasonal_order = n_responses, order, seasonal_order
         self.trend, self.enforce_stationarity = trend, enforce_stationarity
         self.enforce_invertability, self.concentrate_scale = enforce_invertability, concentrate_scale
@@ -60,22 +60,16 @@ class ARIMA(Model):
         return A
 
     # Preconditions:
-    #   train/valid/test = [*_X, *_Y]
-    #   *_X.shape=(n_samples, n_temporal_in, n_spatial, n_predictors)
-    #   *_Y.shape=(n_samples, n_temporal_out, n_spatial, n_responses)
+    #   train/valid/test = []
     def optimize(self, train, valid=None, test=None, axes=[0, 1, 2, 3], lr=0.001, lr_decay=0.01, n_epochs=100, early_stop_epochs=10, mbatch_size=256, reg=0.0, loss="mse", opt="sgd", init="xavier", init_seed=-1, batch_shuf_seed=-1, n_procs=1, proc_rank=0, chkpt_epochs=1, chkpt_dir="Checkpoints", use_gpu=True):
         self.train_losses, self.valid_losses, self.test_losses = [0], [0], [0]
 
     # Preconditions:
-    #   data = [X, n_temporal_out]
-    #   axes = [sample_axis, temporal_axis, spatial_axis, feature_axis]
-    # Postconditions:
-    #   Yhat.shape[?] == X.shape[?] for ? in {sample_axis, temporal_axis, spatial_axis}
-    def predict(self, data, axes=[0, 1, 2, 3], mbatch_size=256, method="direct", use_gpu=True):
+    #   data = [spatiotemporal_X, n_temporal_out]
+    #   spatiotemporal_X.shape = (n_samples, n_temporal_in, n_spatial, n_predictors)
+    def predict(self, data, mbatch_size=256, method="direct", use_gpu=True):
         X, n_temporal_out = data[0], data[1]
-        sample_axis, temporal_axis, spatial_axis, feature_axis = axes[0], axes[1], axes[2], axes[3]
-        n_samples, n_spatial, n_responses = X.shape[sample_axis], X.shape[spatial_axis], self.n_responses
-        X = util.move_axes([X], axes, [0, 1, 2, 3])[0]
+        n_samples, n_spatial, n_responses = X.shape[0], X.shape[2], self.n_responses
         Yhat = np.zeros([n_samples, n_temporal_out, n_spatial, n_responses])
         if method == "direct":
             n_mbatches = n_samples // mbatch_size
@@ -88,8 +82,6 @@ class ARIMA(Model):
             raise NotImplementedError()
         else:
             raise NotImplementedError()
-        data = util.move_axes([X, Yhat], [0, 1, 2, 3], axes)
-        X, Yhat = data[0], data[1]
         return Yhat
 
     def init_params(self, init, seed):
@@ -99,15 +91,17 @@ class ARIMA(Model):
         return self
 
 
-def init(var):
+def init(dataset, var):
+    spatmp = dataset.get("spatiotemporal")
+    hyp_var = var.get("models").get(model_name()).get("hyperparameters")
     model = ARIMA(
-        var.get("n_responses"),
-        var.get("order"),
-        var.get("seasonal_order"),
-        var.get("trend"),
-        var.get("enforce_stationarity"),
-        var.get("enforce_invertability"),
-        var.get("trend_offset")
+        spatmp.get("mapping").get("n_responses"), 
+        hyp_var.get("order"), 
+        hyp_var.get("seasonal_order"), 
+        hyp_var.get("trend"), 
+        hyp_var.get("enforce_stationarity"), 
+        hyp_var.get("enforce_invertability"), 
+        hyp_var.get("trend_offset")
     )
     return model
 
@@ -124,7 +118,7 @@ class HyperparameterVariables(Container):
         self.set("trend", None)
         self.set("enforce_stationarity", True)
         self.set("enforce_invertability", True)
-        self.set("selfcentrate_scale", False)
+        self.set("concentrate_scale", False)
         self.set("trend_offset", 1)
 
 

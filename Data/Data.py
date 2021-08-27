@@ -1,8 +1,8 @@
 from Container import Container
-from SpatiotemporalData import SpatiotemporalData
-from SpatialData import SpatialData
-from TemporalData import TemporalData
-from Graph import Graph
+from Data.SpatiotemporalData import SpatiotemporalData
+from Data.SpatialData import SpatialData
+from Data.TemporalData import TemporalData
+from Data.GraphData import GraphData
 
 
 class Data(Container):
@@ -46,9 +46,9 @@ class Data(Container):
                 ]
             )
             temporal = TemporalData(init_var)
-        init_var = var.checkout(["execution", "graph", "plotting"])
         if var.get("execution").get("model") == "GNN":
-            graph = Graph(spatiotemporal, init_var)
+            init_var = var.checkout(["execution", "graph", "plotting"])
+            graph = GraphData(spatiotemporal, init_var)
         con.set("spatiotemporal", spatiotemporal)
         con.set("spatial", spatial)
         con.set("temporal", temporal)

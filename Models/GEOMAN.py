@@ -1,8 +1,5 @@
 import sys
 import os
-currentdir = os.path.dirname(os.path.realpath(__file__))
-parentdir = os.path.dirname(currentdir)
-sys.path.append(parentdir)
 import torch
 import torch.distributed as dist
 import numpy as np
@@ -287,19 +284,22 @@ class GEOMAN(Model):
         self.saver.save(self.sess, path)
 
 
-def init(var):
+def init(dataset, var):
+    spatmp = dataset.get("spatiotemporal")
+    spa = dataset.get("spatial")
+    hyp_var = var.get("models").get(model_name()).get("hyperparameters")
     model = GEOMAN(
-        var.get("n_predictors"),
-        var.get("n_responses"),
-        var.get("original_n_spatial", "train"),
-        var.get("n_temporal_in"),
-        var.get("n_temporal_out"),
-        var.get("n_exogenous"),
-        var.get("n_hidden_encoder"),
-        var.get("n_hidden_decoder"),
-        var.get("n_stacked_layers"),
-        var.get("s_attn_flag"),
-        var.get("dropout_rate")
+        spatmp.get("mapping").get("n_predictors"),
+        spatmp.get("mapping").get("n_responses"),
+        spatmp.get("original").get("original_n_spatial", "train"),
+        spatmp.get("mapping").get("n_temporal_in"),
+        spatmp.get("mapping").get("n_temporal_out"),
+        spat.get("original").get("original_n_exogenous"),
+        hyp_var.get("n_hidden_encoder"),
+        hyp_var.get("n_hidden_decoder"),
+        hyp_var.get("n_stacked_layers"),
+        hyp_var.get("s_attn_flag"),
+        hyp_var.get("dropout_rate")
     )
     return model
 
