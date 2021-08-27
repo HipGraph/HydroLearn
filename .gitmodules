@@ -1,0 +1,3 @@
+[submodule "Models/GeoMAN"]
+	path = Models/GeoMAN
+	url = git@github.com:yoshall/GeoMAN.git
