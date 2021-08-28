@@ -25,21 +25,26 @@ git clone git@github.com:HipGraph/HydroLearn.git --recurse-submodules
 
 ### Data Integration
 In order to feed new data into HydroLearn, users will need to complete the following steps:
-1. Verify data format
+1. Verify data format  
     Dataset loading is currently implemented for spatial and spatiotemporal data. Loading assumes each data file is comma-separated (.csv) and requires the following format:
-    - Spatial Data
+    - Spatial Data  
         For spatial data containing S spatial elements and F spatial features, loading requires the file to contain S lines of F comma-separated features.
-    - Spatiotemporal Data
-        For spatiotemporal data containing T time-steps, S spatial elements, and F spatiotemporal features, loading requires the file to contain TxS lines of F comma-separated features.
-    For both spatial and spatiotemporal data, spatial elements must be listed contiguously (see Data/WabashRiver/Observed/Spatiotemporal.csv). Finally, labels for each time-step and spatial element are required.
-2. Create a dataset directory and add data files
+    - Spatiotemporal Data  
+        For spatiotemporal data containing T time-steps, S spatial elements, and F spatiotemporal features, loading requires the file to contain TxS lines of F comma-separated features.  
+    For both spatial and spatiotemporal data, spatial elements must be listed contiguously (see Data/WabashRiver/Observed/Spatiotemporal.csv). 
+    Finally, labels for each time-step and spatial element are required.
+2. Create a dataset directory and add data files  
     All datasets are stored in their own sub-directory under Data. Simply create a new directory under Data and add all data files to it.
-3. Implement a DatasetVariables module
-    The pipeline recognizes datasets by searching the Data directory (recursively) for all instances of DatasetVariables.py. Users must implement this module and place the script file at the root of their dataset directory. As an example, the Wabash River ground truth dataset is setup with its DatasetVariables.py module in Data/WabashRiver/Observed/. To facilitate user implementation of the DatasetVariables module, a template is included under Data/DatasetVariablesTemplate.py and lists all variables that must be defined. It is recommended that users start witj this template and follow the Wabash River DatasetVariables module as an example.
+3. Implement a DatasetVariables module  
+    The pipeline recognizes datasets by searching the Data directory (recursively) for all instances of DatasetVariables.py. 
+    Users must implement this module and place the script file at the root of their dataset directory. 
+    As an example, the Wabash River ground truth dataset is setup with its DatasetVariables.py module in Data/WabashRiver/Observed/. 
+    To facilitate user implementation of the DatasetVariables module, a template is included under Data/DatasetVariablesTemplate.py and lists all variables that must be defined. 
+    It is recommended that users start witj this template and follow the Wabash River DatasetVariables module as an example.
 
 ### Model Integration
 In order add new models to HydroLearn, users will need to complete the following steps:
-1. Implement a Model module
+1. Implement a Model module  
     The pipeline recognizes models by searching the Models directory (non-recursively) for all modules with the exception of __init__.py and Model.py. 
     Model operations including initialization, optimization, prediction, etc, are defined and operated by the model itself while HydroLearn simply calls a select few. 
     Currently, HydroLearn is designed to work with models implemented in PyTorch but is flexible enough to allow the incorporation of models implemented in Tensorflow (see GEOMAN.py). 
