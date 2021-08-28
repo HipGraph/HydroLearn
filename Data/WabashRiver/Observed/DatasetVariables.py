@@ -1,14 +1,9 @@
 import os
-import Utility as util
 from Container import Container
 
 
 def dataset_name():
-    return "_".join(dataset_dir().split(os.sep)[-2:]).lower()
-
-
-def dataset_dir():
-    return os.path.dirname(os.path.realpath(__file__))
+    return "_".join(DataVariables().get("structure").get("data_dir").split(os.sep)[-2:]).lower()
 
 
 class DataVariables(Container):
@@ -26,6 +21,7 @@ class DataVariables(Container):
     def caching_var(self, con):
         con.set("from_cache", True)
         con.set("to_cache", True)
+        con.set("data_type", self.__class__.__name__.replace("DataVariables", ""))
         return con
 
     def partitioning_var(self, con):
@@ -40,7 +36,7 @@ class DataVariables(Container):
         return con
 
     def structure_var(self, con):
-        con.set("data_dir", dataset_dir())
+        con.set("data_dir", os.path.dirname(os.path.realpath(__file__)))
         con.set("cache_dir", os.sep.join([con.get("data_dir"), "Cache"]))
         return con
 
@@ -48,10 +44,7 @@ class DataVariables(Container):
 class SpatiotemporalDataVariables(DataVariables):
 
     def __init__(self):
-        self.set("loading", self.loading_var(Container()))
-        self.set("caching", self.caching_var(Container()))
-        self.set("partitioning", self.partitioning_var(Container()))
-        self.set("structure", self.structure_var(Container()))
+        super(SpatiotemporalDataVariables, self).__init__()
 
     def loading_var(self, con):
         con.copy(DataVariables().get("loading"))
@@ -67,19 +60,11 @@ class SpatiotemporalDataVariables(DataVariables):
         con.set("temporal_feature", "date")
         return con
 
-    def caching_var(self, con):
-        con.copy(DataVariables().get("caching"))
-        con.set("data_type", self.__class__.__name__.replace("DataVariables", ""))
-        return con
-
 
 class SpatialDataVariables(DataVariables):
 
     def __init__(self):
-        self.set("loading", self.loading_var(Container()))
-        self.set("caching", self.caching_var(Container()))
-        self.set("partitioning", self.partitioning_var(Container()))
-        self.set("structure", self.structure_var(Container()))
+        super(SpatialDataVariables, self).__init__()
 
     def loading_var(self, con):
         con.copy(DataVariables().get("loading"))
@@ -90,11 +75,6 @@ class SpatialDataVariables(DataVariables):
         con.set("original_spatial_labels_text_filename", fname)
         con.set("original_n_spatial", 1276)
         con.set("spatial_feature", "subbasin")
-        return con
-
-    def caching_var(self, con):
-        con.copy(DataVariables().get("caching"))
-        con.set("data_type", self.__class__.__name__.replace("DataVariables", ""))
         return con
 
     def partitioning_var(self, con):
