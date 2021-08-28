@@ -11,12 +11,6 @@ from time import time
 
 class Model(torch_nn.Module):
 
-    dataxes_layout_map = {
-        "sample": 0, 
-        "temporal": 1, 
-        "spatial": 2, 
-        "feature": 3, 
-    }
     config_name_partition_pairs = [
         ["dataset", "train"],
         ["dataset", "valid"],
@@ -143,3 +137,7 @@ class Model(torch_nn.Module):
     def predict(self):
         func_name = self.__class__.__name__+"."+currentframe().f_code.co_name
         raise NotImplementedError("Implement %s() please!" % (func_name))
+
+
+if __name__ == "__main__":
+    pass

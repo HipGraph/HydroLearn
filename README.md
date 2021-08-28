@@ -21,19 +21,28 @@
 
 ### Cloning
 
-git clone --recurse-submodules git@github.com:HipGraph/HydroLearn.git
+git clone git@github.com:HipGraph/HydroLearn.git --recurse-submodules
 
 ### Data Integration
-In order to apply this pipeline to new datasets, users will need to complete the following steps:
+In order to feed new data into HydroLearn, users will need to complete the following steps:
 1. Verify data format
-Dataset loading is currently implemented for spatial and spatiotemporal data. Loading assumes each data file is comma-separated (.csv) and requires the following format:
+    Dataset loading is currently implemented for spatial and spatiotemporal data. Loading assumes each data file is comma-separated (.csv) and requires the following format:
     - Spatial Data
         For spatial data containing S spatial elements and F spatial features, loading requires the file to contain S lines of F comma-separated features.
     - Spatiotemporal Data
         For spatiotemporal data containing T time-steps, S spatial elements, and F spatiotemporal features, loading requires the file to contain TxS lines of F comma-separated features.
-For both spatial and spatiotemporal data, spatial elements must be listed contiguously (see Data/WabashRiver/Observed/Spatiotemporal.csv). Finally, labels for each time-step and spatial element are required.
-2. Create a dataset folder and add data files
-All datasets are stored in their own sub-directory under Data. Simply create a new directory under Data and add all data files to it.
+    For both spatial and spatiotemporal data, spatial elements must be listed contiguously (see Data/WabashRiver/Observed/Spatiotemporal.csv). Finally, labels for each time-step and spatial element are required.
+2. Create a dataset directory and add data files
+    All datasets are stored in their own sub-directory under Data. Simply create a new directory under Data and add all data files to it.
 3. Implement a DatasetVariables module
-The pipeline recognizes datasets by searching the Data directory for all instances of DatasetVariables.py. Users must implement this module and place the script file at the root directory of their data directory. As an example, the Wabash River ground truth dataset is setup with its DatasetVariables.py module in Data/WabashRiver/Observed/. To facilitate user implementation of the DatasetVariables module, a template is included under Data/DatasetVariablesTemplate.py and lists all variables that must be defined. It is recommended that users start with the DatasetVariables module template and follow the Wabash River DatasetVariables module as an example.
+    The pipeline recognizes datasets by searching the Data directory (recursively) for all instances of DatasetVariables.py. Users must implement this module and place the script file at the root of their dataset directory. As an example, the Wabash River ground truth dataset is setup with its DatasetVariables.py module in Data/WabashRiver/Observed/. To facilitate user implementation of the DatasetVariables module, a template is included under Data/DatasetVariablesTemplate.py and lists all variables that must be defined. It is recommended that users start witj this template and follow the Wabash River DatasetVariables module as an example.
 
+### Model Integration
+In order add new models to HydroLearn, users will need to complete the following steps:
+1. Implement a Model module
+    The pipeline recognizes models by searching the Models directory (non-recursively) for all modules with the exception of __init__.py and Model.py. 
+    Model operations including initialization, optimization, prediction, etc, are defined and operated by the model itself while HydroLearn simply calls a select few. 
+    Currently, HydroLearn is designed to work with models implemented in PyTorch but is flexible enough to allow the incorporation of models implemented in Tensorflow (see GEOMAN.py). 
+    As a result, models currently implemented for HydroLearn inherit from a Model class implemented in the Models/Model.py module and this model inherits from PyTorch's neural network module. 
+    To facilitate user implementation of a model module, a template is included under Models/ModelTemplate.py. 
+    It is recommended that users start with this template and follow the LSTM model module under Models/LSTM.py as an example. 
