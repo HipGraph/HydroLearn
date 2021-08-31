@@ -66,7 +66,7 @@ a_vals = con.get("a", "*")
 con.rem("a", "*")
 ```
 #### Demo
-![Example usage of the Container class and the resulting data structure](https://drive.google.com/file/d/14MJwjHMVeqGllIqkPREe1LEVskTt5_M2/view?usp=sharing)
+![Example usage of the Container class and the resulting data structure](./Demo.png)
 ### Data Integration
 In order to feed new data into HydroLearn, users will need to complete the following steps:
 1. Verify data format  
