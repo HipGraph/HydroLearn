@@ -2,7 +2,8 @@ import os
 from Container import Container
 
 
-def dataset_name(): # The name you want for this dataset (important: will be used as a reference internally)
+# The name to be used for this dataset (important: will be used as a reference internally)
+def dataset_name():
     raise NotImplementedError()
 
 

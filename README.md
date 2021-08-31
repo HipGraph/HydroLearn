@@ -20,9 +20,53 @@
 19. Variables.py : A data class defining all variables and their default values.
 
 ### Cloning
+This repository contains submodules and will require the user to clone each before HydroLearn is operational. This repository and all submodules may be cloned at once using the --recurse-submodules flag. See examples below:
 
+git clone https://github.com/HipGraph/HydroLearn.git --recurse-submodules
 git clone git@github.com:HipGraph/HydroLearn.git --recurse-submodules
 
+## Working with HydroLearn
+### Containers
+To maintain flexibility and manage the namespace, HydroLearn relies heavily on the Container class to store runtime data. Simply put, containers are python dictionaries with added functionality. Specifically, this added functionality facilitates the creation of hierarchical data structures with built-in partitioning. Below are just a few examples of working with the Container class:
+#### Basic Variables
+```python
+# Basic operations var "a" with value 1
+con = Container()
+con.set("a", 1)
+a = con.get("a")
+con.rem("a")
+```
+#### Partitioned Variables
+```python
+# Basic operations for var "a" with value 1 under partition "train"
+con = Container()
+con.set("a", 1, partition="train")
+train_a = con.get("a", partition="train")
+con.rem("a", "train"
+```
+#### Nested Variables
+```python
+# Basic operations for var "a" with value 1 under partition "train" in sub-container "child"
+con = Container()
+con.set("a", 1, partition="train", context="child")
+train_a = con.get("a", partition="train", context="child")
+con.rem("a", partition="train", context="child")
+```
+#### Macro Operations
+```python
+con = Container()
+con.set(["a", "b"], 1, "train") # Vars with same value & partition
+a, b = con.get(["a", "b"], "train")
+con.rem(["a", "b"], "train")
+con.set(["a", "b"], 1, ["train", "test"]) # Vars with same value but different partitions
+a, b = con.get(["a", "b"], ["train", "test"])
+con.rem(["a", "b"], ["train", "test"])
+con.set("a", 1, "*") # Var ewith any existing partition
+a_vals = con.get("a", "*")
+con.rem("a", "*")
+```
+#### Demo
+![Example usage of the Container class and the resulting data structure](https://drive.google.com/file/d/14MJwjHMVeqGllIqkPREe1LEVskTt5_M2/view?usp=sharing)
 ### Data Integration
 In order to feed new data into HydroLearn, users will need to complete the following steps:
 1. Verify data format  
@@ -30,7 +74,7 @@ In order to feed new data into HydroLearn, users will need to complete the follo
     - Spatial Data  
         For spatial data containing S spatial elements and F spatial features, loading requires the file to contain S lines of F comma-separated features.
     - Spatiotemporal Data  
-        For spatiotemporal data containing T time-steps, S spatial elements, and F spatiotemporal features, loading requires the file to contain TxS lines of F comma-separated features.  
+        For spatiotemporal data containing T time-steps, S spatial elements, and F spatiotemporal features, loading requires the file to contain T x S lines of F comma-separated features.  
     For both spatial and spatiotemporal data, spatial elements must be listed contiguously (see Data/WabashRiver/Observed/Spatiotemporal.csv). 
     Finally, labels for each time-step and spatial element are required.
 2. Create a dataset directory and add data files  
@@ -40,14 +84,14 @@ In order to feed new data into HydroLearn, users will need to complete the follo
     Users must implement this module and place the script file at the root of their dataset directory. 
     As an example, the Wabash River ground truth dataset is setup with its DatasetVariables.py module in Data/WabashRiver/Observed/. 
     To facilitate user implementation of the DatasetVariables module, a template is included under Data/DatasetVariablesTemplate.py and lists all variables that must be defined. 
-    It is recommended that users start witj this template and follow the Wabash River DatasetVariables module as an example.
+    It is recommended that users start with this template and follow the Wabash River DatasetVariables module as an example.
 
 ### Model Integration
 In order add new models to HydroLearn, users will need to complete the following steps:
 1. Implement a Model module  
-    The pipeline recognizes models by searching the Models directory (non-recursively) for all modules with the exception of __init__.py and Model.py. 
-    Model operations including initialization, optimization, prediction, etc, are defined and operated by the model itself while HydroLearn simply calls a select few. 
-    Currently, HydroLearn is designed to work with models implemented in PyTorch but is flexible enough to allow the incorporation of models implemented in Tensorflow (see GEOMAN.py). 
-    As a result, models currently implemented for HydroLearn inherit from a Model class implemented in the Models/Model.py module and this model inherits from PyTorch's neural network module. 
-    To facilitate user implementation of a model module, a template is included under Models/ModelTemplate.py. 
+    The pipeline recognizes models by searching the Models directory (non-recursively) for all modules with the exception of \_\_init\_\_.py, Model.py and ModelTemplate.py. 
+    Model operations including initialization, optimization, prediction, etc, are defined and operated by the model itself while HydroLearn simply calls a select few functions.
+    Currently, HydroLearn is designed assuming models are implemented in PyTorch but is flexible enough to allow the incorporation of models implemented in Tensorflow (see Models/GEOMAN.py). 
+    As a result, models currently implemented for HydroLearn inherit from a Model class implemented in the Models/Model.py module and this class inherits from PyTorch's torch.nn.Module. 
+    To facilitate user implementation of model modules, a template is included under Models/ModelTemplate.py. 
     It is recommended that users start with this template and follow the LSTM model module under Models/LSTM.py as an example. 

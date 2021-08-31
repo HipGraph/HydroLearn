@@ -1061,43 +1061,43 @@ class Plotting(Container):
         n_responses = spatmp.get("misc").get("n_responses")
         response_features = spatmp.get("misc").get("response_features")
         response_indices = spatmp.get("misc").get("response_indices")
-        n_spatial = spatmp.get("original").get("original_n_spatial", partition)
-        spatial_labels = spatmp.get("original").get("original_spatial_labels", partition)
-        spatial_indices = spatmp.get("original").get("original_spatial_indices", partition)
+        n_spatial = spatmp.get("original").get("n_spatial", partition)
+        spatial_labels = spatmp.get("original").get("spatial_labels", partition)
+        spatial_indices = spatmp.get("original").get("spatial_indices", partition)
         mins = spatmp.filter_axes(
-            spatmp.get("metrics").get("reduced_minimums"),
+            spatmp.get("metrics").get("minimums"),
             [1, 2],
             [spatial_indices, response_indices]
         )
         maxes = spatmp.filter_axes(
-            spatmp.get("metrics").get("reduced_maximums"),
+            spatmp.get("metrics").get("maximums"),
             [1, 2],
             [spatial_indices, response_indices]
         )
         meds = spatmp.filter_axes(
-            spatmp.get("metrics").get("reduced_medians"),
+            spatmp.get("metrics").get("medians"),
             [1, 2],
             [spatial_indices, response_indices]
         )
         means = spatmp.filter_axes(
-            spatmp.get("metrics").get("reduced_means"),
+            spatmp.get("metrics").get("means"),
             [1, 2],
             [spatial_indices, response_indices]
         )
         stddevs = spatmp.filter_axes(
-            spatmp.get("metrics").get("reduced_standard_deviations"),
+            spatmp.get("metrics").get("standard_deviations"),
             [1, 2],
             [spatial_indices, response_indices]
         )
         transformation_resolution = proc_var.get("transformation_resolution")
-        original_temporal_labels = spatmp.get("original").get("original_temporal_labels", partition)
-        reduced = spatmp.get("reduced").get("reduced", partition)
-        reduced_temporal_labels = spatmp.get("reduced").get("reduced_temporal_labels", partition)
-        reduced_temporal_indices = spatmp.get("reduced").get("reduced_temporal_indices", partition)
-        reduced_n_temporal = spatmp.get("reduced").get("reduced_n_temporal", partition)
-        output_windowed = spatmp.get("windowed").get("output_windowed", partition)
-        output_windowed_temporal_labels = spatmp.get("windowed").get(
-            "output_windowed_temporal_labels", 
+        original_temporal_labels = spatmp.get("original").get("temporal_labels", partition)
+        reduced_features = spatmp.get("reduced").get("features", partition)
+        reduced_temporal_labels = spatmp.get("reduced").get("temporal_labels", partition)
+        reduced_temporal_indices = spatmp.get("reduced").get("temporal_indices", partition)
+        reduced_n_temporal = spatmp.get("reduced").get("n_temporal", partition)
+        windowed_output_features = spatmp.get("windowed").get("output_features", partition)
+        windowed_output_temporal_labels = spatmp.get("windowed").get(
+            "output_temporal_labels", 
             partition
         )
         n_windows = spatmp.get("windowed").get("n_windows", partition)
@@ -1110,14 +1110,14 @@ class Plotting(Container):
         prediction = prediction[contiguous_window_indices,:,:,:]
         temporal_channel_idx = 0
         gt = spatmp.filter_axes(
-            reduced[temporal_channel_indices],
+            reduced_features[temporal_channel_indices],
             [2],
             [spatmp.get("misc").get("response_indices")]
         )
-        output_windowed_temporal_labels = output_windowed_temporal_labels[contiguous_window_indices]
+        windowed_output_temporal_labels = windowed_output_temporal_labels[contiguous_window_indices]
         temporal_labels = reduced_temporal_labels[temporal_channel_idx,:]
         dayofyear_indices = util.convert_dates_to_daysofyear(temporal_labels) - 1
-        output_windowed_dayofyear_indices = util.convert_dates_to_daysofyear(output_windowed_temporal_labels).reshape(-1) - 1
+        windowed_output_dayofyear_indices = util.convert_dates_to_daysofyear(windowed_output_temporal_labels).reshape(-1) - 1
         event_data = np.zeros((gt.shape[0],n_spatial,n_responses,2))
         cache_plot_data = False
         cache_plot_data = True
@@ -1200,8 +1200,8 @@ class Plotting(Container):
                 if "prediction_extremes" in options:
                     self._plot_prediction_extremes(
                         spatial_response_prediction, 
-                        means[output_windowed_dayofyear_indices,s,o], 
-                        stddevs[output_windowed_dayofyear_indices,s,o], 
+                        means[windowed_output_dayofyear_indices,s,o], 
+                        stddevs[windowed_output_dayofyear_indices,s,o], 
                         n_temporal_in, 
                         n_temporal_out, 
                         n_spatial, 

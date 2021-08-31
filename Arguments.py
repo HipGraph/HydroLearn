@@ -50,8 +50,10 @@ class ArgumentParser(Container):
             value = self.string_to_bool(string)
         elif self.is_list(string):
             value = self.string_to_list(string)
-        else:
+        else:#elif is_string(string):
             value = self.string_to_string(string)
+#        else:
+#            raise ValueError("The type of argument value %s was not recognized and cannot be parsed" % (string))
         return value
 
     def string_to_int(self, string):
@@ -70,7 +72,7 @@ class ArgumentParser(Container):
         return [self.string_to_value(str_i) for str_i in string.split(sep)]
 
     def string_to_string(self, string):
-        return string
+        return string.replace("\"", "").replace("'", "")
 
     def is_int(self, string):
         return string.isdigit() or (string[0] is "-" and string[1:].isdigit())
@@ -86,6 +88,9 @@ class ArgumentParser(Container):
 
     def get_list_order(self, string):
         return len(max(re.compile("%s*" % (list_sep)).findall(string)))
+
+    def is_string(self, string):
+        return (string[0] == "\"" and string[-1] == "\"") or (string[0] == "'" and string[-1] == "'")
 
 
 class ArgumentBuilder(Container):

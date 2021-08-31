@@ -15,14 +15,13 @@ class Data(Container):
         # Initialize each unique dataset being considered. This way we do not init the same dataset twice.
         for dataset in uniq_datasets:
             self.set(dataset, self.init_dataset(Container(), var.get("datasets").get(dataset), var))
-        # Add additional reference(s) to each dataset as "dataset" under the partition given in exec_var. This adds some abstraction but is primarily to allow the user to simply call get("dataset", partition) rather than look-up the dataset name for each partition.
+        # Add additional reference(s) to each dataset as "dataset" under the partition given in exec_var.
         for dataset, partition in zip(datasets, partitions):
             self.set("dataset", self.get(dataset), partition)
-        graph = None
 
     def init_dataset(self, con, dataset_var, var):
-        spatiotemporal, spatial, temporal, graph = None, None, None, None
-        if not dataset_var.get("spatiotemporal") is None:
+        spatiotemporal, spatial, temporal, graph = Container(), Container(), Container(), Container()
+        if not dataset_var.get("spatiotemporal").is_empty():
             init_var = Container().copy(
                 [
                     dataset_var.get("spatiotemporal"), 
@@ -30,7 +29,7 @@ class Data(Container):
                 ]
             )
             spatiotemporal = SpatiotemporalData(init_var)
-        if not dataset_var.get("spatial") is None:
+        if not dataset_var.get("spatial").is_empty():
             init_var = Container().copy(
                 [
                     dataset_var.get("spatial"), 
@@ -38,7 +37,7 @@ class Data(Container):
                 ]
             )
             spatial = SpatialData(init_var)
-        if not dataset_var.get("temporal") is None:
+        if not dataset_var.get("temporal").is_empty():
             init_var = Container().copy(
                 [
                     dataset_var.get("temporal"), 

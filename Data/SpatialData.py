@@ -14,7 +14,7 @@ class SpatialData(Container):
         con = self.init_original(Container(), var)
         self.set("original", con)
         print("    Initialized Original: %.3fs" % ((time.time() - start)))
-        self.set(["partitioning"], [var.get("partitioning")])
+        self.set("partitioning", var.get("partitioning"))
         print(util.make_msg_block("Spatial Data Initialization : Completed", "#"))
 
     def init_original(self, con, var):
@@ -25,43 +25,43 @@ class SpatialData(Container):
         dist_var = var.get("distribution")
         tmp_var = Container().copy([load_var, cache_var, struct_var])
         if dist_var.get("process_rank") == dist_var.get("root_process_rank"):
-            con.set("original", self.load_original(tmp_var))
-            con.set("original_spatial_labels", self.load_original_spatial_labels(tmp_var))
+            con.set("features", self.load_original(tmp_var))
+            con.set("spatial_labels", self.load_original_spatial_labels(tmp_var))
             con.set(
-                "original_spatial_indices", 
+                "spatial_indices", 
                 self.get_original_spatial_indices(
                     part_var.get("spatial_selection"), 
-                    con.get("original_spatial_labels")
+                    con.get("spatial_labels")
                 )
             )
             for partition in part_var.get("partitions"):
                 con.set(
-                    "original_spatial_indices", 
+                    "spatial_indices", 
                     self.get_original_spatial_indices(
                         part_var.get("spatial_selection", partition), 
-                        con.get("original_spatial_labels")
+                        con.get("spatial_labels")
                     ),
                     partition
                 )
                 con.set(
-                    "original_spatial_labels",
+                    "spatial_labels",
                     self.filter_axis(
-                        con.get("original_spatial_labels"), 
+                        con.get("spatial_labels"), 
                         0,
-                        con.get("original_spatial_indices", partition)
+                        con.get("spatial_indices", partition)
                     ), 
                     partition
                 )
                 con.set(
-                    "original",
+                    "features",
                     self.filter_axis(
-                        con.get("original"), 
+                        con.get("features"), 
                         0,
-                        con.get("original_spatial_indices", partition)
+                        con.get("spatial_indices", partition)
                     ), 
                     partition
                 )
-            con.set("original_n_exogenous", con.get("original").shape[-1])
+            con.set("n_exogenous", con.get("features").shape[-1])
         return con
 
     def filter_axes(self, A, target_axes, filter_indices):

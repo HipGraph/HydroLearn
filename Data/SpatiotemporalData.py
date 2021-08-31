@@ -44,8 +44,10 @@ class SpatiotemporalData(Container):
         con = self.init_and_distribute_windowed(Container(), var)
         self.set("windowed", con)
         print("    Initialized Windowed: %.3fs" % ((time.time() - start)))
-        self.set(["partitioning", "mapping"], [var.get("partitioning"), var.get("mapping")])
+        self.set("partitioning", var.get("partitioning"))
+        self.set("mapping", var.get("mapping"))
         print(util.make_msg_block("Spatiotemporal Data Initialization : Completed", "#"))
+        print(self.to_string())
         return
         plt = Plotting()
         if 0:
@@ -56,16 +58,16 @@ class SpatiotemporalData(Container):
                 plt._plot_spatiotemporal("reduced", self, partition)
         if 0:
             for partition in self.get("partitions"):
-                plt._plot_spatiotemporal("input_windowed", self, partition)
+                plt._plot_spatiotemporal("input_features", self, partition)
         if 0:
             for partition in self.get("partitions"):
-                plt._plot_spatiotemporal("output_windowed", self, partition)
+                plt._plot_spatiotemporal("output_features", self, partition)
         if 0:
             for partition in self.get("partitions"):
-                plt._plot_spatiotemporal("transformed_input_windowed", self, partition)
+                plt._plot_spatiotemporal("transformed_input_features", self, partition)
         if 1:
             for partition in self.get("partitions"):
-                plt._plot_spatiotemporal("transformed_output_windowed", self, partition)
+                plt._plot_spatiotemporal("transformed_output_features", self, partition)
         quit()
 
     def init_miscellaneous(self, con, var):
@@ -89,10 +91,8 @@ class SpatiotemporalData(Container):
             util.get_dict_values(load_var.get("feature_index_map"), con.get("features"))
         )
         con.set("n_features", len(con.get("features")))
-        con.set(
-            ["feature_index_map", "index_feature_map"], 
-            load_var.get(["feature_index_map", "index_feature_map"])
-        )
+        con.set("feature_index_map", load_var.get("feature_index_map"))
+        con.set("index_feature_map", load_var.get("index_feature_map"))
         return con
 
     def init_original(self, con, var):
@@ -109,25 +109,25 @@ class SpatiotemporalData(Container):
                     part_var.get("temporal_selection")
                 )
             )
-            con.set("original", self.load_original(tmp_var))
-            con.set("original_temporal_labels", self.load_original_temporal_labels(tmp_var))
+            con.set("features", self.load_original(tmp_var))
+            con.set("temporal_labels", self.load_original_temporal_labels(tmp_var))
             con.set(
-                "original_temporal_indices", 
+                "temporal_indices", 
                 self.get_original_temporal_indices(
                     part_var.get("temporal_selection"),
-                    con.get("original_temporal_labels")
+                    con.get("temporal_labels")
                 )
             )
-            con.set("original_n_temporal", len(con.get("original_temporal_labels")))
-            con.set("original_spatial_labels", self.load_original_spatial_labels(tmp_var))
+            con.set("n_temporal", len(con.get("temporal_labels")))
+            con.set("spatial_labels", self.load_original_spatial_labels(tmp_var))
             con.set(
-                "original_spatial_indices", 
+                "spatial_indices", 
                 self.get_original_spatial_indices(
                     part_var.get("spatial_selection"),
-                    con.get("original_spatial_labels")
+                    con.get("spatial_labels")
                 )
             )
-            con.set("original_n_spatial", len(con.get("original_spatial_labels")))
+            con.set("n_spatial", len(con.get("spatial_labels")))
             for partition in part_var.get("partitions"):
                 con.set(
                     "temporal_interval",
@@ -137,57 +137,57 @@ class SpatiotemporalData(Container):
                     partition
                 )
                 con.set(
-                    "original_temporal_indices", 
+                    "temporal_indices", 
                     self.get_original_temporal_indices(
                         part_var.get("temporal_selection", partition),
-                        con.get("original_temporal_labels")
+                        con.get("temporal_labels")
                     ),
                     partition
                 )
                 con.set(
-                    "original_temporal_labels",
+                    "temporal_labels",
                     self.filter_axis(
-                        con.get("original_temporal_labels"),
+                        con.get("temporal_labels"),
                         0,
-                        con.get("original_temporal_indices", partition)
+                        con.get("temporal_indices", partition)
                     ),
                     partition
                 )
                 con.set(
-                    "original_n_temporal",
-                    len(con.get("original_temporal_labels", partition)),
+                    "n_temporal",
+                    len(con.get("temporal_labels", partition)),
                     partition
                 )
                 con.set(
-                    "original_spatial_indices",
+                    "spatial_indices",
                     self.get_original_spatial_indices(
                         part_var.get("spatial_selection", partition),
-                        con.get("original_spatial_labels")
+                        con.get("spatial_labels")
                     ),
                     partition
                 )
                 con.set(
-                    "original_spatial_labels",
+                    "spatial_labels",
                     self.filter_axis(
-                        con.get("original_spatial_labels"),
+                        con.get("spatial_labels"),
                         0,
-                        con.get("original_spatial_indices", partition)
+                        con.get("spatial_indices", partition)
                     ),
                     partition
                 )
                 con.set(
-                    "original_n_spatial",
-                    len(con.get("original_spatial_labels", partition)),
+                    "n_spatial",
+                    len(con.get("spatial_labels", partition)),
                     partition
                 )
                 con.set(
-                    "original",
+                    "features",
                     self.filter_axes(
-                        con.get("original"),
+                        con.get("features"),
                         [0, 1],
                         [
-                            con.get("original_temporal_indices", partition),
-                            con.get("original_spatial_indices", partition)
+                            con.get("temporal_indices", partition),
+                            con.get("spatial_indices", partition)
                         ]
                     ),
                     partition
@@ -206,91 +206,91 @@ class SpatiotemporalData(Container):
         tmp_var = Container().copy([load_var, cache_var, struct_var])
         if dist_var.get("process_rank") == dist_var.get("root_process_rank"):
             con.set(
-                "reduced_n_temporal_channels",
+                "n_temporal_channels",
                 self.compute_reduced_n_temporal_channels(proc_var.get("temporal_reduction"))
             )
             con.set(
-                "reduced_n_temporal",
+                "n_temporal",
                 self.compute_reduced_n_temporal(
-                    orig_var.get("original_n_temporal"),
+                    orig_var.get("n_temporal"),
                     proc_var.get("temporal_reduction")
                 )
             )
             con.set(
-                "reduced",
+                "features",
                 self.load_reduced(
-                    orig_var.get("original"),
-                    orig_var.get("original_temporal_labels"),
+                    orig_var.get("features"),
+                    orig_var.get("temporal_labels"),
                     orig_var.get("temporal_interval"),
                     proc_var.get("temporal_reduction"),
                     tmp_var
                 )
             )
             con.set(
-                "reduced_temporal_labels",
+                "temporal_labels",
                 self.load_reduced_temporal_labels(
-                    orig_var.get("original"),
-                    orig_var.get("original_temporal_labels"),
+                    orig_var.get("features"),
+                    orig_var.get("temporal_labels"),
                     orig_var.get("temporal_interval"),
                     proc_var.get("temporal_reduction"),
                     tmp_var
                 )
             )
             con.set(
-                "reduced_spatial_labels",
-                np.tile(orig_var.get("original_spatial_labels"), con.get("reduced_n_temporal_channels"))
+                "spatial_labels",
+                np.tile(orig_var.get("spatial_labels"), con.get("n_temporal_channels"))
             )
             for partition in part_var.get("partitions"):
                 con.set("temporal_interval", orig_var.get("temporal_interval", partition), partition)
-                con.set("reduced", con.get("reduced"), partition)
+                con.set("features", con.get("features"), partition)
                 con.set(
-                    "reduced_temporal_indices", 
+                    "temporal_indices", 
                     self.get_reduced_temporal_indices(
                         part_var.get("temporal_selection", partition),
-                        con.get("reduced_temporal_labels"),
-                        con.get("reduced_n_temporal")
+                        con.get("temporal_labels"),
+                        con.get("n_temporal")
                     ),
                     partition
                 )
                 con.set(
-                    "reduced_n_temporal",
+                    "n_temporal",
                     self.compute_reduced_n_temporal_from_temporal_indices(
-                        con.get("reduced_temporal_indices", partition)
+                        con.get("temporal_indices", partition)
                     ),
                     partition
                 )
                 con.set(
-                    "reduced",
+                    "features",
                     self.filter_axis(
-                        con.get("reduced", partition),
+                        con.get("features", partition),
                         2,
-                        orig_var.get("original_spatial_indices", partition)
+                        orig_var.get("spatial_indices", partition)
                     ),
                     partition
                 )
                 con.set(
-                    "reduced",
+                    "features",
                     self.filter_reduced(
-                        con.get("reduced", partition),
-                        con.get("reduced_temporal_indices", partition),
+                        con.get("features", partition),
+                        con.get("temporal_indices", partition),
                         "temporal"
                     ),
                     partition
                 )
                 con.set(
-                    "reduced_temporal_labels",
+                    "temporal_labels",
                     self.filter_reduced_temporal_labels(
-                        con.get("reduced_temporal_labels"),
-                        con.get("reduced_temporal_indices", partition),
+                        con.get("temporal_labels"),
+                        con.get("temporal_indices", partition),
                         "temporal"
                     ),
                     partition
                 )
                 con.set(
-                    "reduced_spatial_labels",
+                    "spatial_labels",
                     np.tile(
-                        orig_var.get("original_spatial_labels", partition), 
-                        con.get("reduced_n_temporal_channels")
+                        orig_var.get("spatial_labels", partition), 
+                        con.get("n_temporal_channels")
                     ),
                     partition
                 )
@@ -308,11 +308,11 @@ class SpatiotemporalData(Container):
         proc_var = var.get("processing")
         tmp_var = Container().copy([proc_var, load_var, cache_var, struct_var])
         metric_function_map = {
-            "reduced_minimums": self.load_reduced_minimums,
-            "reduced_maximums": self.load_reduced_maximums,
-            "reduced_medians": self.load_reduced_medians,
-            "reduced_means": self.load_reduced_means,
-            "reduced_standard_deviations": self.load_reduced_standard_deviations
+            "minimums": self.load_reduced_minimums,
+            "maximums": self.load_reduced_maximums,
+            "medians": self.load_reduced_medians,
+            "means": self.load_reduced_means,
+            "standard_deviations": self.load_reduced_standard_deviations
         }
         reduced, reduced_not_filtered = None, True
         if dist_var.get("process_rank") == dist_var.get("root_process_rank"):
@@ -322,7 +322,7 @@ class SpatiotemporalData(Container):
                 # Try to pull from cache (since reduced is none)
                 metric = metric_function_map[metric_names[i]](
                     reduced,
-                    red_var.get("reduced_temporal_labels", proc_var.get("metric_source_partition")),
+                    red_var.get("temporal_labels", proc_var.get("metric_source_partition")),
                     red_var.get("temporal_interval", proc_var.get("metric_source_partition")),
                     proc_var.get("temporal_reduction"),
                     tmp_var
@@ -332,8 +332,8 @@ class SpatiotemporalData(Container):
                 if metric is None:
                     if reduced_not_filtered:
                         reduced = self.filter_reduced(
-                            red_var.get("reduced"),
-                            red_var.get("reduced_temporal_indices", proc_var.get("metric_source_partition")),
+                            red_var.get("features"),
+                            red_var.get("temporal_indices", proc_var.get("metric_source_partition")),
                             "temporal"
                         )
                         reduced_not_filtered = False
@@ -360,13 +360,14 @@ class SpatiotemporalData(Container):
         tmp_var = Container().copy([misc_var, met_var, proc_var])
         if dist_var.get("process_rank") == dist_var.get("root_process_rank"):
             # create and distribute all windowed elements for each partition
-            con.set(["n_temporal_in", "n_temporal_out"], map_var.get(["n_temporal_in", "n_temporal_out"]))
+            con.set("n_temporal_in", map_var.get("n_temporal_in"))
+            con.set("n_temporal_out", map_var.get("n_temporal_out"))
             for partition in part_var.get("partitions"):
                 con.set(
                     "n_windows",
                     self.compute_n_windows(
-                        red_var.get("reduced_n_temporal_channels"),
-                        red_var.get("reduced_n_temporal", partition),
+                        red_var.get("n_temporal_channels"),
+                        red_var.get("n_temporal", partition),
                         map_var.get("n_temporal_in"),
                         map_var.get("n_temporal_out")
                     ),
@@ -387,11 +388,11 @@ class SpatiotemporalData(Container):
                     # Create windowed inputs for current process
                     windowed, windowed_temporal_labels = self.window_reduced(
                         self.filter_axes(
-                            red_var.get("reduced", partition),
+                            red_var.get("features", partition),
                             [3],
                             [misc_var.get("predictor_indices")]
                         ),
-                        red_var.get("reduced_temporal_labels", partition),
+                        red_var.get("temporal_labels", partition),
                         map_var.get("n_temporal_in"),
                         1,
                         0,
@@ -400,17 +401,17 @@ class SpatiotemporalData(Container):
                         con.get("n_windows", partition),
                         con.get("n_windows_per_process", partition)
                     )
-                    con.set("input_windowed", windowed, partition)
-                    con.set("input_windowed_temporal_labels", windowed_temporal_labels, partition)
+                    con.set("input_features", windowed, partition)
+                    con.set("input_temporal_labels", windowed_temporal_labels, partition)
                     con.set(
-                        "transformed_input_windowed",
+                        "transformed_input_features",
                         self.transform_windowed(
-                            np.copy(con.get("input_windowed", partition)),
+                            np.copy(con.get("input_features", partition)),
                             [1, 2, 3],
                             util.convert_dates_to_daysofyear(
-                                con.get("input_windowed_temporal_labels", partition)
+                                con.get("input_temporal_labels", partition)
                             ) - 1,
-                            orig_var.get("original_spatial_indices", partition),
+                            orig_var.get("spatial_indices", partition),
                             misc_var.get("predictor_indices"),
                             tmp_var
                         ),
@@ -419,11 +420,11 @@ class SpatiotemporalData(Container):
                     # Create windowed outputs for current process
                     windowed, windowed_temporal_labels = self.window_reduced(
                         self.filter_axes(
-                            red_var.get("reduced", partition),
+                            red_var.get("features", partition),
                             [3],
                             [misc_var.get("response_indices")]
                         ),
-                        red_var.get("reduced_temporal_labels", partition),
+                        red_var.get("temporal_labels", partition),
                         map_var.get("n_temporal_out"),
                         1,
                         map_var.get("n_temporal_in"),
@@ -432,17 +433,17 @@ class SpatiotemporalData(Container):
                         con.get("n_windows", partition),
                         con.get("n_windows_per_process", partition)
                     )
-                    con.set("output_windowed", windowed, partition)
-                    con.set("output_windowed_temporal_labels", windowed_temporal_labels, partition)
+                    con.set("output_features", windowed, partition)
+                    con.set("output_temporal_labels", windowed_temporal_labels, partition)
                     con.set(
-                        "transformed_output_windowed",
+                        "transformed_output_features",
                         self.transform_windowed(
-                            np.copy(con.get("output_windowed", partition)),
+                            np.copy(con.get("output_features", partition)),
                             [1, 2, 3],
                             util.convert_dates_to_daysofyear(
-                                con.get("output_windowed_temporal_labels", partition)
+                                con.get("output_temporal_labels", partition)
                             ) - 1,
-                            orig_var.get("original_spatial_indices", partition),
+                            orig_var.get("spatial_indices", partition),
                             misc_var.get("response_indices"),
                             tmp_var
                         ),
@@ -450,14 +451,14 @@ class SpatiotemporalData(Container):
                     )
                     # Send results because the target process is a non-root processes
                     if process_rank != dist_var.get("root_process_rank"):
-                        n_dimensions = torch.tensor([con.get("transformed_input_windowed", partition).ndim])
-                        input_shape = torch.tensor(con.get("transformed_input_windowed", partition).shape)
-                        output_shape = torch.tensor(con.get("transformed_output_windowed", partition).shape)
+                        n_dimensions = torch.tensor([con.get("transformed_input_features", partition).ndim])
+                        input_shape = torch.tensor(con.get("transformed_input_features", partition).shape)
+                        output_shape = torch.tensor(con.get("transformed_output_features", partition).shape)
                         torch_dist.send(n_dimensions, dst=process_rank)
                         torch_dist.send(input_shape, dst=process_rank)
-                        torch_dist.send(con.get("transformed_input_windowed"), dst=process_rank)
+                        torch_dist.send(con.get("transformed_input_features"), dst=process_rank)
                         torch_dist.send(output_shape, dst=process_rank)
-                        torch_dist.send(con.get("transformed_output_windowed"), dst=process_rank)
+                        torch_dist.send(con.get("transformed_output_features"), dst=process_rank)
         else: # Receive results because I am a non-root process
             n_dimensions = torch.tensor([0])
             torch_dist.recv(n_dimensions, src=dist_var.get("root_process_rank"))
@@ -465,12 +466,12 @@ class SpatiotemporalData(Container):
             output_shape = torch.tensor([n_dimensions[0]])
             torch_dist.recv(input_shape, src=dist_var.get("root_process_rank"))
             torch_dist.recv(output_shape, src=dist_var.get("root_process_rank"))
-            transformed_input_windowed = torch.Tensor(input_shape)
-            transformed_output_windowed = torch.Tensor(output_shape)
-            torch_dist.recv(transformed_input_windowed, src=dist_var.get("root_process_rank"))
-            torch_dist.recv(transformed_output_windowed, src=dist_var.get("root_process_rank"))
-            con.set("transformed_input_windowed", util.to_ndarray(transformed_input_windowed))
-            con.set("transformed_output_windowed", util.to_ndarray(transformed_output_windowed))
+            transformed_input_features = torch.Tensor(input_shape)
+            transformed_output_features = torch.Tensor(output_shape)
+            torch_dist.recv(transformed_input_features, src=dist_var.get("root_process_rank"))
+            torch_dist.recv(transformed_output_features, src=dist_var.get("root_process_rank"))
+            con.set("transformed_input_features", util.to_ndarray(transformed_input_features))
+            con.set("transformed_output_features", util.to_ndarray(transformed_output_features))
         return con
 
     def filter_axes(self, A, target_axes, filter_indices):
@@ -547,11 +548,11 @@ class SpatiotemporalData(Container):
         features = self.get_features_from_indices(feature_indices, var.get("index_feature_map"))
         transformation_resolution = var.get("transformation_resolution")
         feature_transformation_map = var.get("feature_transformation_map")
-        mins = var.get("reduced_minimums")
-        maxes = var.get("reduced_maximums")
-        meds = var.get("reduced_medians")
-        means = var.get("reduced_means")
-        stds = var.get("reduced_standard_deviations")
+        mins = var.get("minimums")
+        maxes = var.get("maximums")
+        meds = var.get("medians")
+        means = var.get("means")
+        stds = var.get("standard_deviations")
         mins = self.reduce_metric_to_resolution(mins, transformation_resolution, np.min)
         maxes = self.reduce_metric_to_resolution(maxes, transformation_resolution, np.max)
         meds = self.reduce_metric_to_resolution(meds, transformation_resolution, np.median)
@@ -656,11 +657,11 @@ class SpatiotemporalData(Container):
         features = self.get_features_from_indices(feature_indices, var.get("index_feature_map"))
         transformation_resolution = var.get("transformation_resolution")
         feature_transformation_map = var.get("feature_transformation_map")
-        mins = var.get("reduced_minimums")
-        maxes = var.get("reduced_maximums")
-        meds = var.get("reduced_medians")
-        means = var.get("reduced_means")
-        stds = var.get("reduced_standard_deviations")
+        mins = var.get("minimums")
+        maxes = var.get("maximums")
+        meds = var.get("medians")
+        means = var.get("means")
+        stds = var.get("standard_deviations")
         mins = self.reduce_metric_to_resolution(mins, transformation_resolution, np.min)
         maxes = self.reduce_metric_to_resolution(maxes, transformation_resolution, np.max)
         meds = self.reduce_metric_to_resolution(meds, transformation_resolution, np.median)
@@ -929,27 +930,6 @@ class SpatiotemporalData(Container):
         else:
             raise NotImplementedError()
         return distance
-    
-    def get_original(self, partition, masks=["dates interval", "subbasins"]):
-        original = self.get("original")
-        if original is None:
-            raise ValueError("Historical was None: Initialize with load_historical(...).")
-        if "dates interval" in masks:
-            dates_indices = self.get("dates_indices", partition)
-            original = original[dates_indices,:,:]
-        if "subbasins" in masks:
-            subbasin_indices = self.get("subbasin_indices", partition)
-            original = original[:,subbasin_indices,:]
-        predictor_indices = self.get("predictor_indices")
-        response_indices = self.get("response_indices")
-        if "predictors + responses" in masks:
-            feature_indices = np.concatenate((predictor_indices, response_indices))
-            original = original[:,:,feature_indices]
-        elif "predictors" in masks:
-            original = original[:,:,predictor_indices]
-        elif "responses" in masks:
-            original = original[:,:,response_indices]
-        return original
 
     def get_reduced_channel_indices(self, reduced_n_temporal, channel):
         channel_idx = channel - 1

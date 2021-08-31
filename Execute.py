@@ -47,6 +47,7 @@ def main(argv):
         torch_dist.init_process_group(backend=dist_var.get("backend"), world_size=n_procs, rank=proc_rank)
     # Initialize and unpack the data
     data = Data(var)
+    print(data.get("dataset", "train").to_string())
     train_spatmp = data.get("dataset", "train").get("spatiotemporal")
     train_spa = data.get("dataset", "train").get("spatial")
     train_graph = data.get("dataset", "train").get("graph")
@@ -58,10 +59,12 @@ def main(argv):
         test_spa = data.get("dataset", "test").get("spatial")
         test_graph = data.get("dataset", "test").get("graph")
     if dbg_var.get("print_data")[0]:
-        msg = " " * 50 + "Data" + " " * 50
+        n = 51
+        msg = " " * n + "Data" + " " * n
         print(util.make_msg_block(msg, "#"))
         print(data.to_string(dbg_var.get("print_data")[1]))
         print(util.make_msg_block(msg, "#"))
+        msg = " " * n + "Data" + " " * n
     if dbg_var.get("data_memory"):
         print("Training Dataset Memory Usage =", util.get_memory_of(data.get("dataset", "train")))
         if proc_rank == root_proc_rank:
@@ -72,18 +75,33 @@ def main(argv):
     model = model_module.init(data.get("dataset", "train"), var)
     config_var = Container().copy([exec_var, proc_var, map_var, hyp_var, graph_var])
     config_var.set(
-        ["spatial_selection", "temporal_selection"], 
-        train_spatmp.get("partitioning").get(["spatial_selection", "temporal_selection"], "train"), 
+        "spatial_selection", 
+        train_spatmp.get("partitioning").get("spatial_selection", "train"), 
         "train"
     )
     config_var.set(
-        ["spatial_selection", "temporal_selection"], 
-        valid_spatmp.get("partitioning").get(["spatial_selection", "temporal_selection"], "valid"), 
+        "temporal_selection", 
+        train_spatmp.get("partitioning").get("temporal_selection", "train"), 
+        "train"
+    )
+    config_var.set(
+        "spatial_selection", 
+        valid_spatmp.get("partitioning").get("spatial_selection", "valid"), 
         "valid"
     )
     config_var.set(
-        ["spatial_selection", "temporal_selection"], 
-        test_spatmp.get("partitioning").get(["spatial_selection", "temporal_selection"], "test"), 
+        "temporal_selection", 
+        valid_spatmp.get("partitioning").get("temporal_selection", "valid"), 
+        "valid"
+    )
+    config_var.set(
+        "spatial_selection", 
+        test_spatmp.get("partitioning").get("spatial_selection", "test"), 
+        "test"
+    )
+    config_var.set(
+        "temporal_selection", 
+        test_spatmp.get("partitioning").get("temporal_selection", "test"), 
         "test"
     )
     chkpt_dir = os.sep.join([chkpt_var.get("checkpoint_dir"), model.name(), model.get_id(config_var)])
@@ -109,7 +127,8 @@ def main(argv):
             start = time.time()
         # Construct optimization keyword arguments and run
         opt_var = Container().copy([train_var, chkpt_var])
-        opt_var.set(["train", "valid", "test", "chkpt_dir"], [train, valid, test, chkpt_dir])
+        for name, value in zip(["train", "valid", "test", "chkpt_dir"], [train, valid, test, chkpt_dir]):
+            opt_var.set(name, value)
         opt_args = make_func_args(model.optimize, opt_var)
         model.optimize(**opt_args)
         # Save training runtime and plot learning curve
@@ -145,9 +164,9 @@ def main(argv):
             train_Yhat = model.predict(train)
             valid_Yhat = model.predict(valid)
             test_Yhat = model.predict(test)
-            train_Y = train_spatmp.get("windowed").get("transformed_output_windowed", "train")
-            valid_Y = valid_spatmp.get("windowed").get("transformed_output_windowed", "valid")
-            test_Y = test_spatmp.get("windowed").get("transformed_output_windowed", "test")
+            train_Y = train_spatmp.get("windowed").get("transformed_output_features", "train")
+            valid_Y = valid_spatmp.get("windowed").get("transformed_output_features", "valid")
+            test_Y = test_spatmp.get("windowed").get("transformed_output_features", "test")
             # Undo transformation of features
             if proc_var.get("transform_features"):
                 tmp_var = Container().copy([train_spatmp.get("misc"), train_spatmp.get("metrics"), proc_var])
@@ -157,9 +176,9 @@ def main(argv):
                     train_Yhat,
                     [1, 2, 3],
                     util.convert_dates_to_daysofyear(
-                        train_spatmp.get("windowed").get("output_windowed_temporal_labels", "train")
+                        train_spatmp.get("windowed").get("output_temporal_labels", "train")
                     ) - 1,
-                    train_spatmp.get("original").get("original_spatial_indices", "train"),
+                    train_spatmp.get("original").get("spatial_indices", "train"),
                     train_spatmp.get("misc").get("response_indices"),
                     tmp_var,
                     revert=True
@@ -168,9 +187,9 @@ def main(argv):
                     train_Y,
                     [1, 2, 3],
                     util.convert_dates_to_daysofyear(
-                        train_spatmp.get("windowed").get("output_windowed_temporal_labels", "train")
+                        train_spatmp.get("windowed").get("output_temporal_labels", "train")
                     ) - 1,
-                    train_spatmp.get("original").get("original_spatial_indices", "train"),
+                    train_spatmp.get("original").get("spatial_indices", "train"),
                     train_spatmp.get("misc").get("response_indices"),
                     tmp_var,
                     revert=True
@@ -181,9 +200,9 @@ def main(argv):
                     valid_Yhat,
                     [1, 2, 3],
                     util.convert_dates_to_daysofyear(
-                        valid_spatmp.get("windowed").get("output_windowed_temporal_labels", "valid")
+                        valid_spatmp.get("windowed").get("output_temporal_labels", "valid")
                     ) - 1,
-                    valid_spatmp.get("original").get("original_spatial_indices", "valid"),
+                    valid_spatmp.get("original").get("spatial_indices", "valid"),
                     valid_spatmp.get("misc").get("response_indices"),
                     tmp_var, 
                     revert=True
@@ -192,9 +211,9 @@ def main(argv):
                     valid_Y,
                     [1, 2, 3],
                     util.convert_dates_to_daysofyear(
-                        valid_spatmp.get("windowed").get("output_windowed_temporal_labels", "valid")
+                        valid_spatmp.get("windowed").get("output_temporal_labels", "valid")
                     ) - 1,
-                    valid_spatmp.get("original").get("original_spatial_indices", "valid"),
+                    valid_spatmp.get("original").get("spatial_indices", "valid"),
                     valid_spatmp.get("misc").get("response_indices"),
                     tmp_var, 
                     revert=True
@@ -205,9 +224,9 @@ def main(argv):
                     test_Yhat,
                     [1, 2, 3],
                     util.convert_dates_to_daysofyear(
-                        test_spatmp.get("windowed").get("output_windowed_temporal_labels", "test")
+                        test_spatmp.get("windowed").get("output_temporal_labels", "test")
                     ) - 1,
-                    test_spatmp.get("original").get("original_spatial_indices", "test"),
+                    test_spatmp.get("original").get("spatial_indices", "test"),
                     test_spatmp.get("misc").get("response_indices"),
                     tmp_var, 
                     revert=True
@@ -216,9 +235,9 @@ def main(argv):
                     test_Y,
                     [1, 2, 3],
                     util.convert_dates_to_daysofyear(
-                        test_spatmp.get("windowed").get("output_windowed_temporal_labels", "test")
+                        test_spatmp.get("windowed").get("output_temporal_labels", "test")
                     ) - 1,
-                    test_spatmp.get("original").get("original_spatial_indices", "test"),
+                    test_spatmp.get("original").get("spatial_indices", "test"),
                     test_spatmp.get("misc").get("response_indices"),
                     tmp_var, 
                     revert=True
@@ -245,65 +264,65 @@ def main(argv):
                 )
             # Calculate NRMSE for each subbasin
             train_mins = train_spatmp.filter_axes(
-                train_spatmp.get("metrics").get("reduced_minimums"),
+                train_spatmp.get("metrics").get("minimums"),
                 [1, 2],
                 [
-                    train_spatmp.get("original").get("original_spatial_indices", "train"), 
+                    train_spatmp.get("original").get("spatial_indices", "train"), 
                     train_spatmp.get("misc").get("response_indices")
                 ]
             )
             train_maxes = train_spatmp.filter_axes(
-                train_spatmp.get("metrics").get("reduced_maximums"),
+                train_spatmp.get("metrics").get("maximums"),
                 [1, 2],
                 [
-                    train_spatmp.get("original").get("original_spatial_indices", "train"), 
+                    train_spatmp.get("original").get("spatial_indices", "train"), 
                     train_spatmp.get("misc").get("response_indices")
                 ]
             )
             train_NRMSEs = util.compute_nrmse(train_Yhat, train_Y, train_mins, train_maxes)
             valid_mins = valid_spatmp.filter_axes(
-                valid_spatmp.get("metrics").get("reduced_minimums"),
+                valid_spatmp.get("metrics").get("minimums"),
                 [1, 2],
                 [
-                    valid_spatmp.get("original").get("original_spatial_indices", "valid"), 
+                    valid_spatmp.get("original").get("spatial_indices", "valid"), 
                     valid_spatmp.get("misc").get("response_indices")
                 ]
             )
             valid_maxes = valid_spatmp.filter_axes(
-                valid_spatmp.get("metrics").get("reduced_maximums"),
+                valid_spatmp.get("metrics").get("maximums"),
                 [1, 2],
                 [
-                    valid_spatmp.get("original").get("original_spatial_indices", "valid"), 
+                    valid_spatmp.get("original").get("spatial_indices", "valid"), 
                     valid_spatmp.get("misc").get("response_indices")
                 ]
             )
             valid_NRMSEs = util.compute_nrmse(valid_Yhat, valid_Y, valid_mins, valid_maxes)
             test_mins = test_spatmp.filter_axes(
-                test_spatmp.get("metrics").get("reduced_minimums"),
+                test_spatmp.get("metrics").get("minimums"),
                 [1, 2],
                 [
-                    test_spatmp.get("original").get("original_spatial_indices", "test"), 
+                    test_spatmp.get("original").get("spatial_indices", "test"), 
                     test_spatmp.get("misc").get("response_indices")
                 ]
             )
             test_maxes = test_spatmp.filter_axes(
-                test_spatmp.get("metrics").get("reduced_maximums"),
+                test_spatmp.get("metrics").get("maximums"),
                 [1, 2],
                 [
-                    test_spatmp.get("original").get("original_spatial_indices", "test"), 
+                    test_spatmp.get("original").get("spatial_indices", "test"), 
                     test_spatmp.get("misc").get("response_indices")
                 ]
             )
             test_NRMSEs = util.compute_nrmse(test_Yhat, test_Y, test_mins, test_maxes)
             print("train_NRMSEs =", train_NRMSEs.shape, "=")
             for i in range(train_NRMSEs.shape[0]):
-                print(train_spatmp.get("original").get("original_spatial_labels", "train")[i], train_NRMSEs[i])
+                print(train_spatmp.get("original").get("spatial_labels", "train")[i], train_NRMSEs[i])
             print("valid_NRMSEs =", valid_NRMSEs.shape, "=")
             for i in range(valid_NRMSEs.shape[0]):
-                print(valid_spatmp.get("original").get("original_spatial_labels", "valid")[i], valid_NRMSEs[i])
+                print(valid_spatmp.get("original").get("spatial_labels", "valid")[i], valid_NRMSEs[i])
             print("test_NRMSEs =", test_NRMSEs.shape, "=")
             for i in range(test_NRMSEs.shape[0]):
-                print(test_spatmp.get("original").get("original_spatial_labels", "test")[i], test_NRMSEs[i])
+                print(test_spatmp.get("original").get("spatial_labels", "test")[i], test_NRMSEs[i])
             train_NRMSE = np.mean(train_NRMSEs)
             valid_NRMSE = np.mean(valid_NRMSEs)
             test_NRMSE = np.mean(test_NRMSEs)
@@ -314,9 +333,9 @@ def main(argv):
             error_report = util.curate_error_report(
                 [train_NRMSEs, valid_NRMSEs, test_NRMSEs],
                 [
-                    train_spatmp.get("original").get("original_spatial_labels", "train"),
-                    valid_spatmp.get("original").get("original_spatial_labels", "valid"),
-                    test_spatmp.get("original").get("original_spatial_labels", "test")
+                    train_spatmp.get("original").get("spatial_labels", "train"),
+                    valid_spatmp.get("original").get("spatial_labels", "valid"),
+                    test_spatmp.get("original").get("spatial_labels", "test")
                 ],
                 train_spatmp.get("misc").get("response_features"),
                 ["train", "valid", "test"],
@@ -361,11 +380,11 @@ def adjust_predictions(Yhat, spatmp, prediction_adjustment_map):
 def pull_data(data, model, partition, mode):
     dataset = data.get("dataset", partition)
     pulled = [
-        dataset.get("spatiotemporal").get("windowed").get("transformed_input_windowed", partition), 
-        dataset.get("spatiotemporal").get("windowed").get("transformed_output_windowed", partition), 
+        dataset.get("spatiotemporal").get("windowed").get("transformed_input_features", partition), 
+        dataset.get("spatiotemporal").get("windowed").get("transformed_output_features", partition), 
     ]
     if model.name() == "GEOMAN":
-        pulled += [dataset.get("spatial").get("original").get("original", partition)]
+        pulled += [dataset.get("spatial").get("original").get("features", partition)]
     elif model.name() == "GNN":
         pulled += [
             dataset.get("graph").get("spatial_indices", partition), 

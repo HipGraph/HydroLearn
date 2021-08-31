@@ -21,11 +21,13 @@ class Container:
         return self.get(name, partition, context, recurse, must_exist)
 
     def get(self, name, partition=None, context=None, recurse=False, must_exist=True):
-        if isinstance(name, str) and (isinstance(partition, str) or partition is None):
+        if isinstance(name, str) and (partition is None or isinstance(partition, str)): # Single var
             return self._get(name, partition, context, recurse, must_exist)
-        elif isinstance(name, list):
+        elif isinstance(name, list) and isinstance(partition, list): # Multiple names & partitions
+            return [self._get(_name, _partition, context, recurse, must_exist) for _name, _partition in zip(name, partition)]
+        elif isinstance(name, list): # Multiple names
             return [self._get(_name, partition, context, recurse, must_exist) for _name in name]
-        elif isinstance(partition, list):
+        elif isinstance(partition, list): # Multiple partitions
             return [self._get(name, _partition, context, recurse, must_exist) for _partition in partition]
         else:
             ValueError("Name must be type string/list, partition must be type string/list or None")
@@ -61,20 +63,21 @@ class Container:
         self.validate_type(value, "value")
         self.validate_type(partition, "partition")
         self.validate_type(context, "context")
-        if isinstance(name, list) and isinstance(value, list):
-            name_len = len(name)
-            if not all(len(item) == name_len for item in [name, value]):
-                raise ValueError("Name and value lists must be equal length")
-            if isinstance(partition, list):
-                partition += [None for i in range(name_len-len(partition))]
-            else:
-                partition = [partition for i in range(name_len)]
-            for _name, _value, _partition in zip(name, value, partition):
-                self._set(_name, _value, _partition, context)
-        elif isinstance(name, list):
-            raise NotImplementedError()
-        else:
+        if isinstance(name, str) and (partition is None or isinstance(partition, str)): # Single var
             self._set(name, value, partition, context)
+        elif isinstance(name, list) and isinstance(partition, list): # Multiple names & partitions
+            if len(name) != len(partition):
+                raise ValueError("Name and partition lists must be equal length")
+            for _name, _partition in zip(name, partition):
+                self._set(_name, value, _partition, context) 
+        elif isinstance(name, list): # Multiple names
+            for _name in name:
+                self._set(_name, value, partition, context)
+        elif isinstance(partition, list): # Multiple partitions
+            for _partition in partition:
+                self._set(name, value, _partition, context)
+        else:
+            raise NotImplementedError()
         return self
 
     def _set(self, name, value, partition=None, context=None):
@@ -209,7 +212,6 @@ class Container:
         key += name
         return key
 
-
     def get_container(self, context, create=False):
         if context is None:
             return self
@@ -222,34 +224,27 @@ class Container:
             container = container.get(_context)
         return container
 
-
     def key_exists(self, key):
         return key in self.__dict__
 
-
     def var_exists(self, name, partition=None, context=None, recurse=False):
         return self.key_exists(self.get_key(name, partition))
-
 
     def context_exists(self, context):
         if context is None:
             return False
         return self.key_exists(context) and isinstance(self.get(context), Container)
 
-
     def update_partitions(self, partition):
         if not self.key_exists("partitions"):
             self.set("partitions", set())
         self.get("partitions").add(partition)
 
-
     def get_keys(self):
         return list(self.__dict__.keys())
 
-
     def get_key_values(self):
         return self.__dict__.items()
-
 
     def get_name_value_partitions(self, sort=True):
         name_value_partitions = []
@@ -262,7 +257,6 @@ class Container:
             return name_value_partitions
         return name_value_partitions
 
-
     def get_partition(self, target_name, target_value):
         for key, value in self.get_key_values():
             partition = self.get_partition_from_key(key)
@@ -270,17 +264,14 @@ class Container:
             if target_value is value and target_name is name:
                 return partition
 
-
     def get_partition_from_key(self, key):
         partition = None
         if self.partition_sep in key:
             partition = self.partition_sep.join(key.split(self.partition_sep)[:-1])
         return partition
 
-
     def get_name_from_key(self, key):
         return key.split(self.partition_sep)[-1]
-
 
     def get_memory_of(self):
         size = 0
@@ -292,8 +283,10 @@ class Container:
         return size
 
     def size(self):
-        return len(self.get_key_values())
+        return len(self.get_keys())
 
+    def is_empty(self):
+        return self.size() == 0
 
     def to_string(self, recurse=True, sort=True, extent=[110, 1], in_recursion=False):
         def cut_x(line, x_extent):

@@ -115,7 +115,11 @@ class Variables(Container):
         return con
 
     def models_var(self, con, exec_var, only_import_used=False):
-        module_paths = util.get_paths("Models", "(?=[a-zA-Z_]+\.py)(?!.*Model\.py)(?!__init__\.py)")
+        path_regex = "(?=[0-9a-zA-Z_]+\.py)" # Match scripts named with one or more digits and/or characters and/or underscores
+        path_regex += "(?!Model\.py)" # DO NOT match the script Model.py
+        path_regex += "(?!ModelTemplate\.py)" # DO NOT match the script ModelTemplate.py
+        path_regex += "(?!__init__\.py)" # DO NOT match the script __init__.py
+        module_paths = util.get_paths("Models", path_regex)
         import_statements = [path.replace(os.sep, ".").replace(".py", "") for path in module_paths]
         if only_import_used:
             modules = []
@@ -234,7 +238,7 @@ class DatasetVariables(Container):
         except AttributeError as err:
             if "has no attribute \'SpatiotemporalDataVariables\'" in str(err):
                 warn(warn_msg % ("SpatiotemporalDataVariables", dataset_module.__file__), UserWarning)
-                self.set("spatiotemporal", None)
+                self.set("spatiotemporal", Container())
             else:
                 raise AttributeError(err)
         try:
@@ -245,7 +249,7 @@ class DatasetVariables(Container):
         except AttributeError as err:
             if "has no attribute \'SpatialDataVariables\'" in str(err):
                 warn(warn_msg % ("SpatialDataVariables", dataset_module.__file__), UserWarning)
-                self.set("spatial", None)
+                self.set("spatial", Container())
             else:
                 raise AttributeError(err)
         try:
@@ -256,7 +260,7 @@ class DatasetVariables(Container):
         except AttributeError as err:
             if "has no attribute \'TemporalDataVariables\'" in str(err):
                 warn(warn_msg % ("TemporalDataVariables", dataset_module.__file__), UserWarning)
-                self.set("temporal", None)
+                self.set("temporal", Container())
             else:
                 raise AttributeError(err)
 
