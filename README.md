@@ -30,7 +30,7 @@ git clone git@github.com:HipGraph/HydroLearn.git --recurse-submodules
 To maintain flexibility and manage the namespace, HydroLearn relies heavily on the Container class to store runtime data. Simply put, containers are python dictionaries with added functionality. Specifically, this added functionality facilitates the creation of hierarchical data structures with built-in partitioning. Below are just a few examples of working with the Container class:
 #### Basic Variables
 ```python
-# Basic operations var "a" with value 1
+# Basic operations for var "a" with value 1
 con = Container()
 con.set("a", 1)
 a = con.get("a")
@@ -46,7 +46,7 @@ con.rem("a", "train"
 ```
 #### Nested Variables
 ```python
-# Basic operations for var "a" with value 1 under partition "train" in sub-container "child"
+# Basic operations for var "a" with value 1 under partition "train" in child container "child"
 con = Container()
 con.set("a", 1, partition="train", context="child")
 train_a = con.get("a", partition="train", context="child")
