@@ -1,31 +1,62 @@
 import sys
 import os
 import torch
-import torch.distributed as dist
 import numpy as np
+import tensorflow as tf
 from time import time
-import hashlib
 from progressbar import ProgressBar
 import Utility as util
 from Models.Model import Model
 from Models.GeoMAN.GeoMAN import GeoMAN
 from Container import Container
-import tensorflow as tf
 
 
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 
+class SlidingWindowDataset(torch.utils.data.Dataset):
+
+    def __init__(self, data):
+        self.req_names = [
+            "local_inputs", 
+            "global_inputs", 
+            "external_inputs", 
+            "local_attn_states", 
+            "global_attn_states", 
+            "labels"
+        ]
+        self.data = data
+        if not isinstance(self.data, dict):
+            raise ValueError("Data must be a dictionary")
+        for name in self.req_names:
+            assert name in self.data, "Name \"%s\" not found in data dictionary" % (name)
+
+    def __len__(self):
+        return self.data["local_inputs"].shape[0]
+
+    def __getitem__(self, key):
+        mb = {
+            "local_inputs": self.data["local_inputs"][key], 
+            "global_inputs": self.data["global_inputs"][key], 
+            "external_inputs": self.data["external_inputs"][key], 
+            "local_attn_states": self.data["local_attn_states"][key], 
+            "global_attn_states": self.data["global_attn_states"][key], 
+            "labels": self.data["labels"][key]
+        }
+        return mb
+
+
 class GEOMAN(Model):
 
-    def __init__(self, n_predictors, n_responses, n_spatial, n_temporal_in, n_temporal_out, n_exogenous, n_hidden_encoder=128, n_hidden_decoder=128, n_stacked_layers=1, s_attn_flag=2, dropout_rate=0.0):
+    def __init__(self, n_predictors, n_responses, n_exogenous, n_temporal_in, n_temporal_out, n_spatial, n_hidden_encoder=64, n_hidden_decoder=64, n_stacked_layers=2, s_attn_flag=2, dropout_rate=0.3):
+        super(GEOMAN, self).__init__()
         # Hyperparameters
         self.hps = tf.contrib.training.HParams(
             # GPU parameters
             gpu_id="0",
             # Model parameters
-            learning_rate=0.001,
-            lambda_l2_reg=0.0,
+            learning_rate=1e-3,
+            lambda_l2_reg=1e-3,
             gc_rate=2.5,
             dropout_rate=dropout_rate,
             n_stacked_layers=n_stacked_layers,
@@ -43,8 +74,7 @@ class GEOMAN(Model):
             n_hidden_decoder=n_hidden_decoder,
             n_output_decoder=n_responses
         )
-        # model construction
-        self.name
+        # Model construction
         os.environ["CUDA_VISIBLE_DEVICES"] = "0"
         tf_config = tf.ConfigProto()
         tf_config.gpu_options.allow_growth = True
@@ -62,125 +92,100 @@ class GEOMAN(Model):
             ["s_attn_flag", None],
             ["dropout_rate", None]
         ]
+        # Other variables
+#        self.LoaderDatasetClass = GeoMANDataset
 
     # Preconditions:
-    def forward(self, data, indices, fetches):
-        n_spatial = len(data[0])
-        results = [[] for fetch in fetches]
+    #   inputs={"local_inputs": ndarray, ...}
+    def forward(self, inputs):
+#        self.debug = 1
+        # Reformat the data and convert to ndarrays
+        inputs = self.format_inputs(inputs)
+        for key in inputs.keys():
+            inputs[key] = util.to_ndarray(inputs[key])
+        # Unpack the data
+        local_inputs, global_inputs = inputs["local_inputs"], inputs["global_inputs"]
+        external_inputs, local_attn_states = inputs["external_inputs"], inputs["local_attn_states"]
+        global_attn_states, labels = inputs["global_attn_states"], inputs["labels"]
+        n_spatial = local_inputs.shape[2]
+        # Setup for forward
+        fetch_names = ["loss"]
+        if self.training:
+            fetch_names.append("train_op")
+        else:
+            fetch_names.append("preds")
+        fetches = [self.model.phs[fetch_name] for fetch_name in fetch_names]
+        outputs = {fetch_name: [] for fetch_name in fetch_names}
+        # Forward for each spatial element
         for s in range(n_spatial):
             feeds = {
-                self.model.phs["local_inputs"]: data[0][s][indices],
-                self.model.phs["global_inputs"]: data[1][indices],
-                self.model.phs["external_inputs"]: data[2][s][indices],
-                self.model.phs["local_attn_states"]: data[3][s][indices],
-                self.model.phs["global_attn_states"]: data[4][indices],
-                self.model.phs["labels"]: data[5][s][indices]
+                self.model.phs["local_inputs"]: local_inputs[:,:,s],
+                self.model.phs["global_inputs"]: global_inputs,
+                self.model.phs["external_inputs"]: external_inputs[:,:,s],
+                self.model.phs["local_attn_states"]: local_attn_states[:,s],
+                self.model.phs["global_attn_states"]: global_attn_states,
+                self.model.phs["labels"]: labels[:,:,s]
             }
             fetched = self.sess.run(fetches, feeds)
-            for i in range(len(fetched)):
-                results[i] += [fetched[i]]
-        return results
+            if self.debug and False:
+                print(fetched)
+            for fetch_name, fetch in zip(fetch_names, fetched):
+                outputs[fetch_name].append(fetch)
+        # Process outputs
+        outputs["loss"] = sum(outputs["loss"]) / n_spatial
+        if "preds" in outputs:
+            outputs["preds"] = util.to_tensor(np.swapaxes(np.stack(outputs["preds"], axis=2), 0, 1), torch.float)
+            outputs["Yhat"] = outputs["preds"]
+        if "train_op" in outputs:
+            outputs["train_op"] = sum(outputs["train_op"]) / n_spatial
+        if self.debug:
+            print("Loss =", outputs["loss"])
+            if "Yhat" in outputs:
+                print("Yhat =", outputs["Yhat"].shape)
+            sys.exit(1)
+        return outputs
 
-    # Preconditions:
-    #   train/valid/test = [spatiotemporal_X, spatiotemporal_Y, spatial]
-    #   spatiotemporal_X.shape = (n_samples, n_temporal_in, n_spatial, n_predictors)
-    #   spatiotemporal_Y.shape = (n_samples, n_temporal_out, n_spatial, n_responses)
-    #   spatial.shape = (n_spatial, n_exogeneous)
-    def optimize(self, train, valid=None, test=None, axes=[0, 1, 2, 3], lr=0.001, lr_decay=0.01, n_epochs=100, early_stop_epochs=10, mbatch_size=256, reg=0.0, loss="mse", opt="sgd", init="xavier", init_seed=-1, batch_shuf_seed=-1, n_procs=1, proc_rank=0, chkpt_epochs=1, chkpt_dir="Checkpoints", use_gpu=True):
-        train = self.prepare_data(train)
-        if not valid is None:
-            valid = self.prepare_data(valid)
-        if not test is None:
-            test = self.prepare_data(test)
-        # Initialize parameters
-        self.init_params(init, init_seed)
-        # Commence optimization
-        self.train_losses, self.valid_losses, self.test_losses = [], [], []
-        n_samples = train[0][0].shape[0]
-        n_mbatches = n_samples // mbatch_size
-        if batch_shuf_seed > -1:
-            np.random.seed(batch_shuf_seed)
-        min_valid_loss = sys.float_info.max
-        for epoch in range(n_epochs+1):
-            selection = np.random.choice(n_samples, size=n_samples, replace=False)
-            train_loss = 0
-            # Step through minibatches
-            for mbatch in range(n_mbatches):
-                start, end = mbatch * mbatch_size, (mbatch + 1) * mbatch_size
-                results = self.forward(train, selection[start:end], [self.model.phs["train_op"]])
-                train_loss += np.mean(results[0])
-            train_loss /= n_mbatches
-            self.train_losses += [train_loss]
-            # Save current model
-            if chkpt_epochs > 0 and epoch % chkpt_epochs == 0:
-                path = util.path([chkpt_dir, "Epoch[%d]" % (epoch)])
-                self.checkpoint(path)
-            # Print losses for this epoch
-            print("Epoch %d : Train Loss = %.3f" % (epoch, train_loss))
-            if valid is not None:
-                results = self.forward(valid, np.arange(valid[0][0].shape[0]), [self.model.phs["loss"]])
-                valid_loss = np.mean(results[0])
-                self.valid_losses += [valid_loss]
-                # Save best model
-                if valid_loss < min_valid_loss:
-                    min_valid_loss = valid_loss
-                    n_plateau_epochs = 0
-                    path = util.path([chkpt_dir, "Best"])
-                    self.checkpoint(path)
-                print("Epoch %d : Validation Loss = %.3f" % (epoch, valid_loss))
-                # Check for loss plateau
-                if valid_loss >= min_valid_loss:
-                    n_plateau_epochs += 1
-                    if early_stop_epochs > 0 and n_plateau_epochs % early_stop_epochs == 0:
-                        break
-                else:
-                    min_valid_loss = valid_loss
-                    n_plateau_epochs = 0
-            if test is not None:
-                results = self.forward(test, np.arange(test[0][0].shape[0]), [self.model.phs["loss"]])
-                test_loss = np.mean(results[0])
-                self.test_losses += [test_loss]
-                print("Epoch %d : Test Loss = %.3f" % (epoch, test_loss))
-                print("############################################################")
-            # Decay learning rate
-            if lr_decay > 0:
-                self.hps.learning_rate = lr / (1 + lr_decay * epoch)
-        # Save final model
-        path = util.path([chkpt_dir, "Final"])
-        self.checkpoint(path)
+    def pull_data(self, dataset, partition, var):
+        data = {"E": None}
+        if not dataset.is_empty():
+            data["X"] = dataset.spatiotemporal.transformed.reduced.get("predictor_features", partition)
+            data["Y"] = dataset.spatiotemporal.transformed.reduced.get("response_features", partition)
+            if not dataset.spatial.is_empty():
+                data["E"] = dataset.spatial.transformed.get("numerical_features", partition)
+            else:
+                data["E"] = np.zeros((self.hps.n_sensors, self.hps.n_external_input))
+#            data["n_temporal_out"] = var.temporal_mapping[1]
+        return data
 
-    # Preconditions:
-    #   data = [spatiotemporal_X, spatial]
-    #   spatiotemporal_X.shape = (n_samples, n_temporal_in, n_spatial, n_predictors)
-    #   spatial.shape = (n_spatial, n_exogenous)
-    # Postconditions: 
-    #   Yhat.shape = (n_samples, n_temporal_out, n_spatial, n_responses)
-    def predict(self, data, mbatch_size=256, method="direct", use_gpu=True):
-        X, E = data[0], data[1]
-        n_samples, n_temporal_in, n_spatial, n_predictors  = X.shape[0], X.shape[1], X.shape[2], X.shape[3]
-        n_temporal_out, n_responses = self.hps.n_steps_decoder, self.hps.n_output_decoder
-        Yhat = np.zeros([n_samples, n_temporal_out, n_spatial, n_responses])
-        data = self.prepare_data([X, None, E])
-        if method == "direct":
-            n_mbatches = n_samples // mbatch_size
-            indices = np.linspace(0, n_samples, n_mbatches+1, dtype=np.int)
-            pb = ProgressBar()
-            for i in pb(range(len(indices)-1)):
-                start, end = indices[i], indices[i+1]
-                results = self.forward(data, np.arange(start, end), [self.model.phs["preds"]])
-                Yhat[start:end] = util.move_axes([np.stack(results[0])], [0, 1, 2, 3], [2, 1, 0, 3])[0]
-        elif method == "auto-regressive":
-            raise NotImplementedError()
-        else:
-            raise NotImplementedError()
-        return Yhat
+    def step(self, loss, var):
+        pass
+
+    def loss(self, mb_in, mb_out):
+        return mb_out["loss"]
+
+    def loss_to_numeric(self, loss):
+        return loss
+
+    def criterion(self, var):
+        pass
+
+    def optimizer(self, var):
+        self.model.hps.learning_rate = var.lr
+        self.model.hps.lambda_l2_reg = var.regularization
+        self.model.hps.gc_rate = var.gc_rate
+
+    def update_lr(self, lr):
+        self.model.hps.learning_rate = lr
+
+    def prepare_model(self, use_gpu, revert=False):
+        return self
     
     # Preconditions:
-    #   data = [spatiotemporal_X, spatiotemporal_Y, spatial]
-    #   spatiotemporal_X.shape = (n_samples, n_temporal_in, n_spatial, n_predictors)
-    #   spatiotemporal_Y.shape = (n_samples, n_temporal_out, n_spatial, n_responses)
-    #   spatial.shape = (n_spatial, n_exogeneous)
-    def prepare_data(self, data):
+    #   data = {"X: torch.float, "Y": torch.float, "E": torch.float}
+    #   X.shape = (n_samples, n_temporal_in, n_spatial, n_predictors)
+    #   Y.shape = (n_samples, n_temporal_out, n_spatial, n_responses)
+    #   E.shape = (n_spatial, n_exogeneous)
+    def format_inputs(self, data):
         # ==========================
         # === GeoMAN Data Format ===
         # ==========================
@@ -221,42 +226,55 @@ class GEOMAN(Model):
         #               \/
         #   shape=(n_samples, n_temporal_out, n_responses)
         #
-        X, Y, E = data[0], data[1], data[2]
-        n_samples, n_temporal_in, n_spatial, n_predictors = X.shape[0], X.shape[1], X.shape[2], X.shape[3]
-        n_temporal_out, n_responses = self.hps.n_steps_decoder, self.hps.n_output_decoder 
-        n_exogenous = self.hps.n_external_input
-        if not E is None and E.shape[0] != n_spatial:
-            raise ValueError()
-        if not Y is None and Y.shape[2] != n_spatial:
-            raise ValueError()
-        local_inputs = [X[:,:,s,:] for s in range(n_spatial)]
-        global_inputs = np.mean(X, axis=3)
+        X, Y, E, n_temporal_out = data["X"], data.pop("Y", None), data.pop("E", None), self.hps.n_steps_decoder
+        n_samples, n_temporal_in, n_spatial, n_predictors = X.shape
+        n_responses, n_exogenous = self.hps.n_output_decoder, self.hps.n_external_input
+        if not Y is None:
+            assert Y.shape[1] == self.hps.n_steps_decoder, "Output time-steps of \"Y\" (%d) is inconsistent with output time-steps of GeoMAN (%d)" % (Y.shape[1], self.hps.n_steps_decoder)
+            assert Y.shape[2] == self.hps.n_sensors, "Spatial element count of \"Y\" ($d) is inconsistent with spatial element count of GeoMAN (%d)" % (Y.shape[2], self.hps.n_sensors)
+        if not E is None:
+            assert E.shape[0] == self.hps.n_sensors, "Spatial element count of \"E\" (%d) is inconsistent with spatial element count of GeoMAN (%d)" % (E.shape[0], self.hps.n_sensors)
+            assert E.shape[-1] == self.hps.n_external_input, "Feature count of \"E\" (%d) is inconsistent with external feature count of GeoMAN (%d)" % (E.shape[-1], self.hps.n_external_input)
+        local_inputs = X
+        if self.debug:
+            print("Local Inputs =", local_inputs.shape)
+        global_inputs = torch.mean(X, -1)
+        if self.debug:
+            print("Global Inputs =", global_inputs.shape)
         if E is None:
-            external_inputs = np.zeros((n_samples, n_temporal_out, n_exogenous))
-            external_inputs = [external_inputs for s in range(n_spatial)]
+            external_inputs = torch.zeros((n_samples, n_temporal_out, n_spatial, n_exogenous))
         else:
-            external_inputs = [np.tile(E[s,:], (n_samples, n_temporal_out, 1)) for s in range(n_spatial)]
-        local_attention_states = [
-            util.move_axes(X[:,:,s,:], [0, 1, 2], [0, 2, 1]) for s in range(n_spatial)
-        ]
-        global_attention_states = util.move_axes(X, [0, 1, 2, 3], [0, 3, 1, 2])
+#            external_inputs = torch.tile(E, (n_samples, n_temporal_out, n_spatial, 1))
+            external_inputs = E.repeat((n_samples, n_temporal_out, n_spatial, 1))
+        if self.debug:
+            print("External Inputs =", external_inputs.shape)
+        local_attn_states = util.move_axes(X, [0, 1, 2, 3], [0, 3, 1, 2])
+        if self.debug:
+            print("Local Attention States =", local_attn_states.shape)
+        global_attn_states = util.move_axes(X, [0, 1, 2, 3], [0, 3, 1, 2])
+        if self.debug:
+            print("Global Attention States =", global_attn_states.shape)
         if Y is None:
-            labels = np.zeros((n_samples, n_temporal_out, n_responses))
-            labels = [labels for s in range(n_spatial)]
+            labels = torch.zeros((n_samples, n_temporal_out, n_spatial, n_responses))
         else:
-            labels = [Y[:,:,s,:] for s in range(n_spatial)]
-        data = [
-            local_inputs, 
-            global_inputs, 
-            external_inputs, 
-            local_attention_states, 
-            global_attention_states, 
-            labels
-        ]
+            labels = Y
+        if self.debug:
+            print("Labels =", labels.shape)
+        data = {
+            "local_inputs": local_inputs, 
+            "global_inputs": global_inputs, 
+            "external_inputs": external_inputs, 
+            "local_attn_states": local_attn_states, 
+            "global_attn_states": global_attn_states, 
+            "labels": labels
+        }
         return data
 
+    def log_compgraph(self, train, train_loader, valid, valid_loader, test, test_loader, epoch, var):
+        pass
+
     # Notes:
-    #   This function attempts to induce determinism for optimization but testing appears to show that GeoMAN uses non-deterministic tensorflow operations internall. 
+    #   This function attempts to induce determinism for optimization but testing appears to show that GeoMAN uses non-deterministic tensorflow operations internally. 
     #   Non-deterministic operations may also come from cuDNN used in GPU training as described by Kilian Batzner here: 
     #       https://stackoverflow.com/questions/53396670/unable-to-reproduce-tensorflow-results-even-after-setting-random-seed
     def init_params(self, init, seed=-1):
@@ -281,20 +299,27 @@ class GEOMAN(Model):
         return self
 
     def checkpoint(self, path):
+        path = path.replace(".pth", "")
         self.saver.save(self.sess, path)
+
+    def n_params(self):
+        return sum(np.prod(var.get_shape()) for var in tf.trainable_variables())
 
 
 def init(dataset, var):
     spatmp = dataset.get("spatiotemporal")
     spa = dataset.get("spatial")
     hyp_var = var.get("models").get(model_name()).get("hyperparameters")
+    n_exogenous = 0
+    if not spa.is_empty():
+        n_exogenous = spa.get("transformed").get("n_numerical_features")
     model = GEOMAN(
-        spatmp.get("mapping").get("n_predictors"),
-        spatmp.get("mapping").get("n_responses"),
-        spatmp.get("original").get("original_n_spatial", "train"),
-        spatmp.get("mapping").get("n_temporal_in"),
-        spatmp.get("mapping").get("n_temporal_out"),
-        spat.get("original").get("original_n_exogenous"),
+        spatmp.get("misc").get("n_predictors"),
+        spatmp.get("misc").get("n_responses"),
+        n_exogenous,
+        spatmp.get("mapping").get("temporal_mapping")[0],
+        spatmp.get("mapping").get("temporal_mapping")[1],
+        spatmp.get("original").get("n_spatial", "train"),
         hyp_var.get("n_hidden_encoder"),
         hyp_var.get("n_hidden_decoder"),
         hyp_var.get("n_stacked_layers"),
@@ -311,29 +336,17 @@ def model_name():
 class HyperparameterVariables(Container):
     
     def __init__(self):
-        n = 128
-        ratios = [1.0, 1.0]
-        self.set("n_hidden_encoder", int(ratios[0]*n))
-        self.set("n_hidden_decoder", int(ratios[1]*n))
-        self.set("n_stacked_layers", 1)
+        self.set("n_hidden_encoder", 64)
+        self.set("n_hidden_decoder", 64)
+        self.set("n_stacked_layers", 2)
         self.set("s_attn_flag", 2)
-        self.set("dropout_rate", 0.0)
+        self.set("dropout_rate", 0.3)
 
 
-def test():
-    torch.manual_seed(1)
-    n_samples, n_temporal_in, n_temporal_out, n_spatial, n_predictors, n_responses, n_exogenous = 10, 4, 2, 5, 3, 1, 2
-    X = np.random.normal(size=(n_samples, n_temporal_in, n_spatial, n_predictors))
-    Y = np.ones((n_samples, n_temporal_out, n_spatial, n_responses))
-    E = np.ones((n_spatial, n_exogenous))
-    print(X.shape, Y.shape, E.shape)
-    model = GEOMAN(n_predictors, n_responses, n_spatial, n_temporal_in, n_temporal_out, n_exogenous)
-    model.optimize([X, Y, E], mbatch_size=5, n_epochs=100)
-    print(X.shape, Y.shape, E.shape)
-    Yhat = model.predict([X, E], mbatch_size=3)
-    print(X.shape, Y.shape, E.shape)
-    print("MSE =", np.mean((Y - Yhat)**2))
-
-
-if __name__ == "__main__":
-    test()
+class TrainingVariables(Container):
+    
+    def __init__(self):
+        self.set("lr", 1e-3)
+        self.set("regularization", 1e-3)
+        self.set("gc_rate", 2.5)
+        self.set("use_gpu", False)

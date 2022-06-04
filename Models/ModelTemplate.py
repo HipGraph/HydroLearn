@@ -1,11 +1,5 @@
 import os
-import torch
-import torch.distributed as dist
-import numpy as np
-from sys import float_info
-from time import time
-from progressbar import ProgressBar
-import Utility as util
+import inspect
 from Models.Model import Model
 from Container import Container
 
@@ -14,34 +8,33 @@ from Container import Container
 class YourModel(Model):
 
     def __init__(self):
-        raise NotImplementedError()
+        func_name = inspect.currentframe().f_code.co_name
+        raise NotImplementedError("Implement %s() please!" % (func_name))
         super(YourModel, self).__init__()
         # This list is used to generate a config file and 10-digit model ID.
         #   This resulting model ID is used for checkpointing and saving prediction results.
-        self.config_name_partition_pairs += [ 
-            # Add variables that would uniquely define your model. Hyperparameters are a good choice.
-            #   Items of this list are lists of size two that include the var name and partition it comes from
-            #   Examples: ["n_hidden", None] or ["n_spatial", "train"]
-        ]
+        #   Add variables that would uniquely define your model. Hyperparameters are a good choice.
+        #       Items of this list are lists of size two that include the var name and partition it comes from
+        #       Examples: ["n_hidden", None] or ["n_spatial", "train"]
+        self.config_name_partition_pairs += []
 
-    # The forward pass of this model. This method only required if using PyTorch for back-propagation
-    def forward(self, x):
-        raise NotImplementedError()
+    # Purpose:
+    #   The forward pass of this model. Required if using PyTorch for back-propagation
+    # Preconditions:
+    #   inputs={"X": torch.float}
+    #   X.shape=(n_samples, n_temporal_in, n_spatial, n_predictors)
+    # Postconditions:
+    #   a.shape=(n_samples, n_temporal_out, n_spatial, n_responses)
+    def forward(self, inputs):
+        func_name = inspect.currentframe().f_code.co_name
+        raise NotImplementedError("Implement %s() please!" % (func_name))
         return a
-
-    # Optimizes model parameters given a training dataset and a set of optimization arguments
-    def optimize(self, train_dataset, valid_dataset=None, test_dataset=None, lr=0.001, lr_decay=0.01, n_epochs=100, early_stop_epochs=10, mbatch_size=256, reg=0.0, loss="mse", opt="sgd", init="xavier", init_seed=-1, batch_shuf_seed=-1, n_procs=1, proc_rank=0, chkpt_epochs=1, chkpt_dir="Checkpoints", use_gpu=True):
-        raise NotImplementedError()
-
-    # Predict values given a dataset as input.
-    def predict(self, dataset, mbatch_size=256, method="direct", use_gpu=True):
-        raise NotImplementedError()
-        return Yhat
 
 
 # Pull items from the given dataset and/or init variables for model initialization
 def init(dataset, var):
-    raise NotImplementedError()
+    func_name = currentframe().f_code.co_name
+    raise NotImplementedError("Implement %s() please!" % (func_name))
     return model
 
 
@@ -50,12 +43,18 @@ def model_name():
     return os.path.basename(__file__).replace(".py", "")
 
 
-# Defines all hyperparameters for this model. These will be included in init variable set "var" above in init()
+# Defines all hyperparameter variables for this model. These var are included in init() variable set "var" above
 class HyperparameterVariables(Container):
 
     def __init__(self):
-        raise NotImplementedError()
-        
+        func_name = self.__class__.__name__+"."+currentframe().f_code.co_name
+        raise NotImplementedError("Implement %s() please!" % (func_name))
 
-if __name__ == "__main__":
-    pass
+
+# Defines all training variables specific to this model. Final training vars sent to optimize() will
+#   be the default vars (defined in Variables.py) merged with these vars
+class TrainingVariables(Container):
+
+    def __init__(self):
+        func_name = self.__class__.__name__+"."+currentframe().f_code.co_name
+        raise NotImplementedError("Implement %s() please!" % (func_name))

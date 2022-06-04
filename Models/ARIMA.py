@@ -1,9 +1,6 @@
 import numpy as np
-import sys
 import os
-import time
-import hashlib
-from progressbar import ProgressBar
+import torch
 import Utility as util
 from Models.Model import Model
 from statsmodels.tsa.arima.model import ARIMA as arima
@@ -38,64 +35,63 @@ class ARIMA(Model):
     #   X.shape=(n_samples, n_temporal_in, n_spatial, n_predictors)
     # Postconditions:
     #   A.shape=(n_samples, n_temporal_out, n_spatial, n_responses)
-    def forward(self, X, n_temporal_out, method="direct"):
-        n_samples, n_temporal_in, n_spatial, n_predictors = X.shape[0], X.shape[1], X.shape[2], X.shape[3]
-        A = np.zeros([n_samples, n_temporal_out, n_spatial, self.n_responses])
-        if method == "direct":
-            for i in range(n_samples):
-                for j in range(n_spatial):
-                    for k in range(self.n_responses):
-                        self.model = arima(
-                            X[i,:,j,n_predictors-self.n_responses+k], 
-                            None,
-                            self.order,
-                            self.seasonal_order,
-                            self.trend,
-                            self.enforce_stationarity,
-                            self.enforce_invertability,
-                            self.concentrate_scale,
-                            self.trend_offset
-                        ).fit()
-                        A[i,:,j,k] = self.model.forecast(n_temporal_out)
-        return A
+    def forward(self, inputs):
+        self.debug = 1
+        X, n_temporal_out = inputs["X"], inputs["n_temporal_out"]
+        n_samples, n_temporal_in, n_spatial, n_predictors = X.shape
+        if self.debug:
+            print(util.make_msg_block("ARIMA Forward"))
+        if self.debug:
+            print("X =", X.shape)
+            print(util.memory_of(X))
+        X, A = util.to_ndarray(X), np.zeros((n_samples, n_temporal_out, n_spatial, self.n_responses))
+        for i in range(n_samples):
+            for j in range(n_spatial):
+                for k in range(self.n_responses):
+                    self.model = arima(
+                        X[i,:,j,n_predictors-self.n_responses+k], 
+                        None,
+                        self.order,
+                        self.seasonal_order,
+                        self.trend,
+                        self.enforce_stationarity,
+                        self.enforce_invertability,
+                        self.concentrate_scale,
+                        self.trend_offset
+                    ).fit()
+                    A[i,:,j,k] = self.model.forecast(n_temporal_out)
+        if self.debug:
+            print("Output =", A.shape)
+            print(util.memory_of(A))
+        if self.debug:
+            sys.exit(1)
+        outputs = {"Yhat": util.to_tensor(A, torch.float)}
+        return outputs
 
-    # Preconditions:
-    #   train/valid/test = []
-    def optimize(self, train, valid=None, test=None, axes=[0, 1, 2, 3], lr=0.001, lr_decay=0.01, n_epochs=100, early_stop_epochs=10, mbatch_size=256, reg=0.0, loss="mse", opt="sgd", init="xavier", init_seed=-1, batch_shuf_seed=-1, n_procs=1, proc_rank=0, chkpt_epochs=1, chkpt_dir="Checkpoints", use_gpu=True):
-        self.train_losses, self.valid_losses, self.test_losses = [0], [0], [0]
-
-    # Preconditions:
-    #   data = [spatiotemporal_X, n_temporal_out]
-    #   spatiotemporal_X.shape = (n_samples, n_temporal_in, n_spatial, n_predictors)
-    def predict(self, data, mbatch_size=256, method="direct", use_gpu=True):
-        X, n_temporal_out = data[0], data[1]
-        n_samples, n_spatial, n_responses = X.shape[0], X.shape[2], self.n_responses
-        Yhat = np.zeros([n_samples, n_temporal_out, n_spatial, n_responses])
-        if method == "direct":
-            n_mbatches = n_samples // mbatch_size
-            indices = np.linspace(0, n_samples, n_mbatches+1, dtype=np.int)
-            pb = ProgressBar()
-            for i in pb(range(len(indices)-1)):
-                start, end = indices[i], indices[i+1]
-                Yhat[start:end] = self.forward(X[start:end], n_temporal_out)
-        elif method == "auto-regressive":
-            raise NotImplementedError()
-        else:
-            raise NotImplementedError()
-        return Yhat
-
-    def init_params(self, init, seed):
+    def optimize(self, train_dataset, valid_dataset, test_dataset, var):
         pass
+
+    def prepare_model(self, use_gpu, revert=False):
+        return self
 
     def load(self, var, chkpt_path):
         return self
+
+    def n_params(self):
+        return -1
+
+    def train(self):
+        pass
+
+    def eval(self):
+        pass
 
 
 def init(dataset, var):
     spatmp = dataset.get("spatiotemporal")
     hyp_var = var.get("models").get(model_name()).get("hyperparameters")
     model = ARIMA(
-        spatmp.get("mapping").get("n_responses"), 
+        spatmp.get("misc").get("n_responses"), 
         hyp_var.get("order"), 
         hyp_var.get("seasonal_order"), 
         hyp_var.get("trend"), 
@@ -122,23 +118,7 @@ class HyperparameterVariables(Container):
         self.set("trend_offset", 1)
 
 
-def test():
-    np.random.seed(0)
-    n_samples, n_temporal_in, n_temporal_out, n_spatial, n_predictors, n_responses = 10, 8, 2, 5, 3, 1
-    X = np.random.normal(size=(n_samples, n_temporal_in, n_spatial, n_predictors))
-    Y = np.ones((n_samples, n_temporal_out, n_spatial, n_responses))
-    print(X.shape, Y.shape)
-    model = ARIMA(n_responses)
-    model.optimize([X, Y], n_epochs=100, mbatch_size=5)
-    print(X.shape, Y.shape)
-    Yhat = model.predict([X, n_temporal_out], mbatch_size=3)
-    print(X.shape, Y.shape)
-    print(np.mean((Y - Yhat)**2))
-    print(Y.shape)
-    print(Y)
-    print(Yhat.shape)
-    print(Yhat)
-
-
-if __name__ == "__main__":
-    test()
+class TrainingVariables(Container):
+    
+    def __init__(self):
+        self.set("use_gpu", False)

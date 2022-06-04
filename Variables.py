@@ -1,32 +1,41 @@
 import os
+import warnings
+import importlib
 import Utility as util
 from Container import Container
-from inspect import currentframe
-from importlib import import_module
 
 
 class Variables(Container):
 
-    def __init__(self):
-        self.all_var(self)
+    warn_msgs = True
 
-    def all_var(self, con):
-        con.set("execution", self.execution_var(Container()))
-        con.set("datasets", self.datasets_var(Container(), con.get("execution")))
-        con.set("models", self.models_var(Container(), con.get("execution"), True))
-        con.set("plotting", self.plotting_var(Container()))
-        con.set("training", self.training_var(Container()))
-        con.set("evaluating", self.evaluating_var(Container()))
-        con.set("checkpointing", self.checkpointing_var(Container()))
-        con.set("distribution", self.distribution_var(Container()))
-        con.set("processing", self.processing_var(Container()))
-        con.set("graph", self.graph_var(Container()))
-        con.set("debug", self.debug_var(Container()))
+    def __init__(self):
+        self.set("execution", self.execution_var(Container()))
+        self.set("datasets", self.datasets_var(Container()))
+        self.set("models", self.models_var(Container()))
+        self.set("mapping", self.mapping_var(Container()))
+        self.set("plotting", self.plotting_var(Container()))
+        self.set("training", self.training_var(Container()))
+        self.set("evaluating", self.evaluating_var(Container()))
+        self.set("checkpointing", self.checkpointing_var(Container()))
+        self.set("distribution", self.distribution_var(Container()))
+        self.set("processing", self.processing_var(Container()))
+        self.set("graph", self.graph_var(Container()))
+        self.set("debug", self.debug_var(Container()))
+
+    def debug_var(self, con):
+        con.set("print_args", False)
+        con.set("print_args", True)
+        con.set("print_vars", False)
+        con.set("print_data", False)
+        con.set("data_memory", False)
+        con.set("print_spatial_errors", False)
+        con.set("print_errors", True)
         return con
 
     def execution_var(self, con):
         con.set("model", "LSTM")
-        dataset = "wabashriver_observed"
+        dataset = "littleriver_observed"
         con.set("dataset", dataset)
         con.set("dataset", dataset, "train")
         con.set("dataset", dataset, "valid")
@@ -34,40 +43,62 @@ class Variables(Container):
         return con
 
     def plotting_var(self, con):
+        con.set("plot_dir", "Plots")
         con.set("plot_model_fit", False)
         con.set("plot_model_fit", True)
+        con.set("plot_graph", True)
+        con.set("plot_graph", False)
+        con.set("plot_partitions", ["test"])
         con.set("n_spatial_per_plot", 1)
-        con.set("options", "groundtruth,prediction".split(","))
-        con.set("plot_graph_distributions", "degree,connected_component,local_clustering_coefficient,shortest_path".split(","))
-        con.set("plot_graph_distributions", "".split(","))
+        con.set("line_options", ["groundtruth", "prediction"])
+        con.set("figure_options", ["xlabel", "ylabel", "xticks", "yticks", "lims", "legend", "save"])
+        con.set(
+            "line_kwargs", 
+            {
+                "prediction": {"color": "Reds", "label": "Prediction"}, 
+                "groundtruth": {"color": "Greys", "label": "Groundtruth"}, 
+            }
+        )
+        con.set(
+            "plot_graph_distributions", 
+            ["degree", "connected_component", "local_clustering_coefficient", "shortest_path"]
+        )
+        con.set("plot_graph_distributions", [""])
         return con
 
     def training_var(self, con):
-        con.set("train", False)
-        con.set("n_epochs", 100)
+        con.set("train", True)
+        con.set("n_epochs", 50)
         con.set("early_stop_epochs", -1)
         con.set("mbatch_size", 128)
-        con.set("lr", 0.1)
+        con.set("lr", 0.001)
         con.set("lr_decay", 0.0)
-        con.set("reg", 0.0)
-        con.set("opt", "adam")
-        con.set("opt", "adadelta")
-        con.set("loss", "mse")
-        con.set("init", "xavier")
-        con.set("init_seed", 1)
-        con.set("batch_shuf_seed", 1)
+        con.set("gradient_clip", 5)
+        con.set("regularization", 0.0)
+        con.set("optimizer", "Adam")
+        con.set("loss", "MSELoss")
+        con.set("initializer", None)
+        con.set("initialization_seed", 0)
+        con.set("batch_shuffle_seed", 0)
+        con.set("use_gpu", True)
+        con.set("gpu_data_mapping", "all")
         return con
 
     def evaluating_var(self, con):
-        con.set("evaluate", False)
+        con.set("evaluate", True)
+        con.set("evaluated_partitions", ["train", "valid", "test"])
         con.set("evaluation_range", [0.0, 1.0])
         con.set("evaluation_dir", "Evaluations")
-        con.set("evaluated_checkpoint", "NULL")
+        con.set("evaluated_checkpoint", "Best")
+        con.set("method", "direct")
+        con.set("metrics", ["MAE", "MSE", "MAPE", "RMSE", "NRMSE"])
+        con.set("cache", False)
+        con.set("cache_partitions", ["train", "valid", "test"])
         return con
 
     def checkpointing_var(self, con):
         con.set("checkpoint_dir", "Checkpoints")
-        con.set("chkpt_epochs", -1)
+        con.set("checkpoint_epochs", -1)
         return con
 
     def distribution_var(self, con):
@@ -100,135 +131,98 @@ class Variables(Container):
         con.set("nersc", False)
         return con
 
-    def datasets_var(self, con, exec_var, only_import_used=False):
+    def datasets_var(self, con):
         module_paths = util.get_paths("Data", "DatasetVariables.py", recurse=True)
+        for module_path in module_paths:
+            if os.sep.join(["Data", "DatasetVariables.py"]) in module_path:
+                to_remove = module_path
+                break
+        module_paths.remove(to_remove)
         import_statements = [path.replace(os.sep, ".").replace(".py", "") for path in module_paths]
-        if only_import_used:
-            modules = []
-            for import_statement in import_statements:
-                if exec_var.get("model") in import_statement:
-                    modules += [import_module(import_statement)]
-        else:
-            modules = [import_module(import_statement) for import_statement in import_statements]
+        modules = [importlib.import_module(import_statement) for import_statement in import_statements]
         for module in modules:
             con.set(module.dataset_name(), DatasetVariables(module))
         return con
 
-    def models_var(self, con, exec_var, only_import_used=False):
-        path_regex = "(?=[0-9a-zA-Z_]+\.py)" # Match scripts named with one or more digits and/or characters and/or underscores
-        path_regex += "(?!Model\.py)" # DO NOT match the script Model.py
-        path_regex += "(?!ModelTemplate\.py)" # DO NOT match the script ModelTemplate.py
-        path_regex += "(?!__init__\.py)" # DO NOT match the script __init__.py
+    def models_var(self, con):
+        # Match modules named by one or more: digits, characters, underscores, and/or dashes
+        path_regex = "(?=[0-9a-zA-Z_-]+\.py)"
+        exclusions = ["Model", "ModelTemplate", "__init__"]
+        for excl in exclusions:
+            path_regex += "(?!%s\.py)" % (excl)
         module_paths = util.get_paths("Models", path_regex)
         import_statements = [path.replace(os.sep, ".").replace(".py", "") for path in module_paths]
-        if only_import_used:
-            modules = []
-            for import_statement in import_statements:
-                if exec_var.get("model") in import_statement:
-                    modules += [import_module(import_statement)]
-        else:
-            modules = [import_module(import_statement) for import_statement in import_statements]
+        modules = []
+        for module_path, import_statement in zip(module_paths, import_statements):
+            try:
+                modules.append(importlib.import_module(import_statement))
+            except ImportError as err:
+                if self.warn_msgs:
+                    warnings.warn(
+                        "Failed to import module \"%s\" due to ImportError: \"%s\". Execution will proceed without this module." % (import_statement, str(err)), 
+                        UserWarning, 
+                    )
         for module in modules:
             con.set(module.model_name(), ModelVariables(module))
-        con.set("mapping", self.mapping_var(Container()))
         return con
 
     def mapping_var(self, con):
-        con.set("predictor_features", "date,tmin,tmax,PRECIPmm,FLOW_OUTcms".split(","))
-        con.set("response_features", "FLOW_OUTcms".split(","))
-        con.set("n_predictors", len(con.get("predictor_features")))
-        con.set("n_responses", len(con.get("response_features")))
-        con.set("n_temporal_in", 8)
-        con.set("n_temporal_out", 1)
+        con.set("predictor_features", ["date", "tmin", "tmax", "PRECIPmm", "SWmm", "FLOW_OUTcms"])
+        con.set("predictor_features", ["date", "tmin", "tmax", "PRECIPmm", "FLOW_OUTcms"])
+#        con.set("predictor_features", ["tmin", "tmax", "PRECIPmm", "FLOW_OUTcms"])
+        con.set("response_features", ["FLOW_OUTcms"])
+        con.set("temporal_mapping", [7, 1])
         return con
 
     def processing_var(self, con):
         con.set("metric_source_partition", "train")
-        con.set("n_daysofyear", 366)
-        con.set("temporal_reduction", ["avg", 7, 1])
+        con.set("temporal_reduction", ["avg", 1, 1])
+        con.set("transformation_resolution", ["spatial", "feature"])
         con.set("transform_features", True)
-        con.set("transformation_resolution", "spatial,feature".split(","))
-        con.set(
-            "feature_transformation_map",
-            {
-                "date": "min_max".split(","),
-                "wind": "z_score".split(","),
-                "ETmm": "z_score".split(","),
-                "FLOW_OUTcms": "min_max".split(","),
-                "GW_Qmm": "z_score".split(","),
-                "PERCmm": "z_score".split(","),
-                "PETmm": "z_score".split(","),
-                "PRECIPmm": "z_score".split(","),
-                "PRECIPmm": "none".split(","),
-                "PRECIPmm": "log".split(","),
-                "SNOMELTmm": "z_score".split(","),
-                "SURQmm": "z_score".split(","),
-                "SWmm": "z_score".split(","),
-                "tmax": "z_score".split(","),
-                "tmax": "none".split(","),
-                "tmean": "z_score".split(","),
-                "tmin": "z_score".split(","),
-                "tmin": "none".split(","),
-                "WYLDmm": "z_score".split(","),
-                "flow": "z_score".split(","),
-            }
-        )
-        if 1: # Convert all transformations
-            for feature, transformation in con.get("feature_transformation_map").items():
-                con.get("feature_transformation_map")[feature] = "min_max".split(",")
+        con.set("feature_transformation_map", {})
+        con.set("default_feature_transformation", ["z_score"])
         con.set("adjust_predictions", True)
-        prediction_adjustment_map = {
-            "FLOW_OUTcms": "limit,0,+".split(","),
-        }
-        for feature in con.get("feature_transformation_map").keys():
-            if feature not in prediction_adjustment_map:
-                prediction_adjustment_map[feature] = "none".split(",")
-        con.set("prediction_adjustment_map", prediction_adjustment_map)
+        con.set("prediction_adjustment_map", {})
+        con.set("default_prediction_adjustment", ["none"])
         return con
 
     def graph_var(self, con):
-        con.set("dynamic_time_warping_cache_filename", "DynamicTimeWarping_Feature[%s]_Type[%s].pkl")
-        con.set("features", "FLOW_OUTcms".split(","))
-        con.set("similarity_measure", "dynamic_time_warping")
-        con.set("similarity_measure", "correlation")
-        con.set("construction_method", ["threshold", 0.5])
-        con.set("self_loops", True)
-        con.set("diffuse", True)
-        con.set("diffuse", False)
-        con.set("diffusion_method", ["coeff", [2]])
-        con.set("diffusion_method", ["heat", 2])
-        con.set("diffusion_method", ["ppr", 0.15])
-        con.set("diffusion_method", "none")
-        con.set("diffusion_sparsification", ["threshold", 0.5])
-        con.set("diffusion_sparsification", ["topk", 2])
-        con.set("diffusion_sparsification", "none")
-        con.set("compute_graph_metrics", "n_nodes,n_edges,average_degree,largest_connected_component,average_local_clustering_coefficient,average_shortest_path_length,diameter".split(","))
-        con.set("compute_graph_metrics", "".split(","))
-        return con
-
-    def debug_var(self, con):
-        con.set("print_data", [True, True])
-        con.set("data_memory", False)
         return con
 
 
 class ModelVariables(Container):
 
     def __init__(self, model_module):
+        warn_msg = "Class %s was not found in %s. Execution will proceed using default settings."
         self.set(
             "hyperparameters", 
             self.hyperparameter_var(Container(), model_module.HyperparameterVariables())
         )
+        try:
+            self.set(
+                "training", 
+                self.training_var(Container(), model_module.TrainingVariables())
+            )
+        except AttributeError as err:
+            if "has no attribute \'TrainingVariables\'" in str(err):
+                if False and self.warn_msgs:
+                    warnings.warn(warn_msg % ("TrainingVariables", model_module.__file__), UserWarning)
+                self.set("training", Container())
+            else:
+                raise AttributeError(err)
 
     def hyperparameter_var(self, con, hyp_var):
         con.copy(hyp_var)
+        return con
+
+    def training_var(self, con, train_var):
+        con.copy(train_var)
         return con
 
 
 class DatasetVariables(Container):
 
     def __init__(self, dataset_module):
-        from warnings import warn
         warn_msg = "Class %s was not found in %s. Execution will proceed assuming the data does not exist for this dataset."
         try:
             self.set(
@@ -237,7 +231,8 @@ class DatasetVariables(Container):
             )
         except AttributeError as err:
             if "has no attribute \'SpatiotemporalDataVariables\'" in str(err):
-                warn(warn_msg % ("SpatiotemporalDataVariables", dataset_module.__file__), UserWarning)
+                if False and self.warn_msgs:
+                    warnings.warn(warn_msg % ("SpatiotemporalDataVariables", dataset_module.__file__), UserWarning)
                 self.set("spatiotemporal", Container())
             else:
                 raise AttributeError(err)
@@ -248,7 +243,8 @@ class DatasetVariables(Container):
             )
         except AttributeError as err:
             if "has no attribute \'SpatialDataVariables\'" in str(err):
-                warn(warn_msg % ("SpatialDataVariables", dataset_module.__file__), UserWarning)
+                if False and self.warn_msgs:
+                    warnings.warn(warn_msg % ("SpatialDataVariables", dataset_module.__file__), UserWarning)
                 self.set("spatial", Container())
             else:
                 raise AttributeError(err)
@@ -259,8 +255,21 @@ class DatasetVariables(Container):
             )
         except AttributeError as err:
             if "has no attribute \'TemporalDataVariables\'" in str(err):
-                warn(warn_msg % ("TemporalDataVariables", dataset_module.__file__), UserWarning)
+                if False and self.warn_msgs:
+                    warnings.warn(warn_msg % ("TemporalDataVariables", dataset_module.__file__), UserWarning)
                 self.set("temporal", Container())
+            else:
+                raise AttributeError(err)
+        try:
+            self.set(
+                "graph", 
+                self.data_var(Container(), dataset_module.GraphDataVariables())
+            )
+        except AttributeError as err:
+            if "has no attribute \'GraphDataVariables\'" in str(err):
+                if False and self.warn_msgs:
+                    warnings.warn(warn_msg % ("GraphDataVariables", dataset_module.__file__), UserWarning)
+                self.set("graph", Container())
             else:
                 raise AttributeError(err)
 
@@ -273,14 +282,6 @@ class DatasetVariables(Container):
 
     def loading_var(self, con, data_var):
         con.copy(data_var.get("loading"))
-        con.set(
-            "header_feature_fields",
-            util.list_subtract(con.get("header_fields"), con.get("header_nonfeature_fields"))
-        )
-        con.set("header_field_index_map", util.to_key_index_dict(con.get("header_fields")))
-        con.set("feature_index_map", util.to_key_index_dict(con.get("header_feature_fields")))
-        con.set("index_feature_map", util.invert_dict(con.get("feature_index_map")))
-        con.set("original_n_features", len(con.get("feature_index_map").keys()))
         return con
 
     def caching_var(self, con, data_var):
@@ -317,18 +318,6 @@ class DatasetVariables(Container):
                 "TemporalReduction[%s,%d,%d]", 
             )
         )
-        cache_filename_format = data_var.get("caching").get("data_type") + "Metric_%s_%s_%s.pkl"
-        metric_types = ["Minimums", "Maximums", "Medians", "Means", "StandardDeviations"]
-        name_prefixes = ["minimums", "maximums", "medians", "means", "standard_deviations"]
-        for name_prefix, metric_type in zip(name_prefixes, metric_types):
-            con.set(
-                name_prefix + "_cache_filename",
-                cache_filename_format % (
-                    "Type[%s]" % (metric_type),
-                    "TemporalInterval[%s,%s]",
-                    "TemporalReduction[%s,%d,%d]",
-                )
-            )
         return con
 
     def partitioning_var(self, con, data_var):
@@ -342,4 +331,4 @@ class DatasetVariables(Container):
 
 if __name__ == "__main__":
     var = Variables()
-    print(var.to_string(True))
+    print(var)

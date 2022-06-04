@@ -1,6 +1,4 @@
-import progressbar as pb
 import time
-import argparse
 import os
 import sys
 import re
@@ -9,21 +7,18 @@ import pandas as pd
 import numpy as np
 from progressbar import ProgressBar
 import shapefile
-import pickle
-import matplotlib.pyplot as plt
-from scipy.stats import skew
-import Utility as util
 import NetworkProperties as netprop
+import matplotlib.pyplot as plt
 from matplotlib.ticker import FormatStrFormatter, MaxNLocator
-import matplotlib.patches as mpatches
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-os.environ["PROJ_LIB"] = "C:\\Users\\Nicholas\\Anaconda3\\Library\\share"
-from mpl_toolkits.basemap import Basemap
-from Container import Container
-import polylabel
+import matplotlib.patches as mpatches
 import matplotlib.patheffects as PathEffects
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import polylabel
+import networkx as nx
+import Utility as util
+from Container import Container
 
 
 np.set_printoptions(precision=4, suppress=True, linewidth=200)
@@ -50,27 +45,133 @@ class PolygonN(object):
 
 class Plotting(Container):
 
-
+    debug = False
     line_width = 1
     gt_line_width = 1.25 * line_width
     pred_line_width = 0.75 * line_width
     marker_size = 7
     month_labels = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "January"]
     feature_idx_map = {"FLOW_OUTcms": 3, "SWmm": 10, "PRECIPmm": 7}
-    feature_fullname_map = {"FLOW_OUTcms": "Streamflow", "SWmm": "Soil Moisture"}
-    feature_SIunit_map = {"FLOW_OUTcms": "$m^{3}/s$", "SWmm": "$mm$"}
+    feature_fullname_map = {
+        "FLOW_OUTcms": "Streamflow", 
+        "SWmm": "Soil Moisture", 
+        "PRECIPmm": "Precipitation", 
+        "tmin": "Minimum Temperature", 
+        "tmax": "Maximum Temperature", 
+        "speed_mph": "Vehicle Speed", 
+        "occupancy": "Road Occupancy", 
+        "power_MW": "Power", 
+        "power_kWh": "Power", 
+        "exchange_rate": "Exchange Rate", 
+        "signal_mV": "Signal", 
+        "confirmed": "Confirmed Cases", 
+        "Avg_Speed": "Average Speed", 
+    }
+    feature_SIunit_map = {
+        "FLOW_OUTcms": "$m^{3}/s$", 
+        "SWmm": "$mm$", 
+        "PRECIPmm": "$mm$", 
+        "tmin": "$\degree C$", 
+        "tmax": "$\degree C$", 
+        "speed_mph": "$mph$", 
+        "occupancy": "$\%$", 
+        "power_MW": "$MW$", 
+        "power_kWh": "$kWh$", 
+        "signal_mV": "$mV$", 
+        "Avg_Speed": "$mph$", 
+    }
     feature_ylabel_map = {}
     for feature in feature_fullname_map.keys():
-        feature_ylabel_map[feature] = "%s (%s)" % (feature_fullname_map[feature], feature_SIunit_map[feature])
-    dataset_legend_map = {"littleriver_observed": "Little(GT)", "wabashriver_swat": "Wabash(SWAT)", "wabashriver_observed": "Wabash(GT)"}
+        feature_ylabel_map[feature] = feature_fullname_map[feature]
+        if feature in feature_SIunit_map:
+            feature_ylabel_map[feature] += " (%s)" % (feature_SIunit_map[feature])
+    dataset_legend_map = {
+        "littleriver_observed": "Little", 
+        "wabashriver_swat": "Wabash(SWAT)", 
+        "wabashriver_observed": "Wabash(GT)", 
+        "los-loop_observed": "Los-Loop", 
+        "sz-taxi_observed": "SX-Taxi", 
+        "metr-la": "METR-LA", 
+        "pems-bay": "PEMS-BAY", 
+        "traffic": "Traffic", 
+        "solar-energy": "Solar-Energy", 
+        "electricity": "Electricity", 
+        "exchange-rate": "Exchange Rate", 
+        "ecg5000_observed": "ECG5000", 
+        "covid-19_observed": "COVID-19", 
+        "caltranspems_d05": "Caltrans PeMS District 5", 
+    }
     partition_fullname_map = {"train": "Training", "valid": "Validation", "test": "Testing"}
     partition_codename_map = {"train": "Train", "valid": "Valid", "test": "Test"}
-
+    feature_plot_order_map = {
+        "FLOW_OUTcms": "descending", 
+        "SWmm": "descending", 
+        "speed_mph": "descending", 
+        "occupancy": "descending", 
+        "power_MW": "descending", 
+        "power_kWh": "descending", 
+        "exchange_rate": "descending", 
+        "signal_mV": "descending", 
+        "confirmed": "descending", 
+        "Avg_Speed": "descending", 
+    }
 
     def __init__(self):
+        plt.rcParams.update(plt.rcParamsDefault)
         self.set("plot_dir", "Plots")
         self.set("lines", [])
 
+    def plot_networkx_graph(
+        self, 
+        G, 
+        node_positions=None, 
+        node_sizes=None, 
+        node_list="all", 
+        edge_list="all", 
+        alpha=1.0, 
+        node_kwargs={}, 
+        edge_kwargs={}, 
+        label_kwargs={}, 
+        ax=None, 
+    ):
+        # Get node and edge sets to be plotted
+        if isinstance(node_list, str) and node_list == "all":
+            node_list = list(G.nodes())
+        if isinstance(edge_list, str) and edge_list == "all":
+            edge_list = list(G.edges())
+        elif isinstance(edge_list, np.ndarray):
+            if edge_list.shape[0] == 2:
+                edge_list = [(src, dst) for src, dst in np.transpose(edge_list)]
+        n_nodes = len(node_list)
+        n_edges = len(edge_list)
+        # Generate/prepare node and edge positions/sizes
+        if node_positions is None:
+            node_positions = np.random.uniform(size=(n_nodes, 2))
+        elif not isinstance(node_positions, dict):
+            node_positions = util.to_dict(node_list, node_positions)
+        if node_sizes is None:
+            node_sizes = np.ones((n_nodes,))
+        elif isinstance(node_sizes, dict):
+            node_sizes = util.get_dict_values(node_sizes, node_list)
+        node_sizes = 750 * node_sizes# / max(node_sizes)
+        if 0:
+            for node, pos in node_positions.items():
+                print(node, pos)
+            for node, size in zip(G.nodes(), node_sizes):
+                print(node, size)
+        # Plot it
+        node_kwargs = util.merge_dicts({"alpha": 0.5*alpha}, node_kwargs)
+        edge_kwargs = util.merge_dicts({"alpha": alpha, "node_size": 1/4, "arrows": True}, edge_kwargs)
+        label_kwargs = util.merge_dicts({"alpha": alpha, "font_size": 5, "font_color": "r"}, label_kwargs)
+        if ax is None:
+            nx.draw_networkx_nodes(G, node_positions, nodelist=node_list, node_size=node_sizes, **node_kwargs)
+            nx.draw_networkx_edges(G, node_positions, edgelist=edge_list, **edge_kwargs)
+            nx.draw_networkx_labels(G, node_positions, **label_kwargs)
+        else:
+            nx.draw_networkx_nodes(G, node_positions, nodelist=node_list, node_size=node_sizes, ax=ax, **node_kwargs)
+            nx.draw_networkx_edges(G, node_positions, edgelist=edge_list, ax=ax, **edge_kwargs)
+            nx.draw_networkx_labels(G, node_positions, ax=ax, **label_kwargs)
+#        plt.axis("off")
 
     def plot_watershed(self, item_shapes_map, subbasin_river_map, path, highlight=True, watershed="", river_opts={"color_code": True, "name": True}):
         cache_path = "Data" + os.sep + "SubbasinLabelCoordinateMap_Watershed[%s].pkl" % (watershed)
@@ -278,8 +379,6 @@ class Plotting(Container):
         plt.savefig(path, bbox_inches="tight", dpi=dpi)
         plt.close()
 
-
-
     def plot_cluster_heatmap(self, mat, xtick_labels=[], ytick_labels=[], x_label="", y_label="", plot_numbers=True, transpose=True, size=(12, 12), path=None):
         data = {}
         if transpose:
@@ -308,7 +407,6 @@ class Plotting(Container):
         else:
             plt.savefig(path, bbox_inches="tight")
         plt.close()
-
 
     def plot_heatmap(self, mat, xtick_labels=[], ytick_labels=[], x_label="", y_label="", cbar_label="", plot_numbers=True, transpose=True, size=(12, 12), path=None):
         ma = (np.transpose(mat) if transpose else mat)
@@ -346,7 +444,6 @@ class Plotting(Container):
         else:
             plt.savefig(path, bbox_inches="tight")
         plt.close()
-
 
     def plot_graph_distributions(self, G, distributions, graph_name, plot_dir="Plots"):
         # Degrees
@@ -449,21 +546,63 @@ class Plotting(Container):
             fig.show()
         plt.close()
 
+    def plot_line(self, x, y, line_kwargs={}):
+        plt.plot(x, y, **line_kwargs)
 
-    def plot_density(self, data, color="b", source="", marker="", band_width=1/20, plt_mean=False, plt_median=False, plt_stddev=False, fill=False):
+    def plot_scatter(self, x, y, labels=None, scatter_kwargs={}, label_kwargs={}):
+        scatter_kwargs = util.merge_dicts(
+            {"s": 75, "c": "k"}, 
+            scatter_kwargs
+        )
+        label_kwargs = util.merge_dicts(
+            {"color": "w", "va": "center", "ha": "center", "fontsize": 5}, 
+            label_kwargs
+        )
+#        z = np.polyfit(x, y, 1)
+#        p = np.poly1d(z)
+#        plt.plot(x, p(x), "k--", linewidth=0.75)
+#        plt.axhline(0.0, color="r")
+        if not labels is None:
+#            print(x)
+#            print(y)
+#            print(labels)
+            for _x, _y, _label in zip(x, y, labels):
+#                print(_x, _y, _label)
+                plt.text(_x, _y, _label, **label_kwargs)
+        plt.scatter(x, y, **scatter_kwargs)
+    
+    # Purpose: 
+    #   Plot the probability density function for given data
+    # Notes:
+    #   If receiving "underflow encountered in exp" error, increase/decrease bandwidth/n_bins value
+    #   If PDF looks noisy, increase/decrease bandwidth/n_bins value
+    #   If PDF doesn't sufficiently span the known value range, decrease/increase bandwidth/n_bins value
+    def plot_density(self, data, source="", bandwidth=None, n_bins=100, plt_mean=False, plt_median=False, plt_stddev=False, fill=False, line_kwargs={}):
         from sklearn.neighbors import KernelDensity
         from scipy.stats import gaussian_kde
         from statsmodels.nonparametric.kde import KDEUnivariate
-        print(data.shape, np.min(data), np.max(data))
+        if self.debug:
+            print(data.shape, np.min(data), np.max(data))
         X = np.reshape(data, -1)
         x_range = np.max(X) - np.min(X)
-        xs = np.linspace(np.min(X)-x_range/10, np.max(X)+x_range/10, 101, endpoint=True)
-        kde = KernelDensity(bandwidth=band_width)
+        if bandwidth is None:
+            bandwidth = x_range / n_bins
+        xs = np.linspace(np.min(X)-x_range/10, np.max(X)+x_range/10, n_bins+1, endpoint=True)
+        kde = KernelDensity(bandwidth=bandwidth)
         kde.fit(np.reshape(X, [-1, 1]))
         pdf = np.exp(kde.score_samples(np.reshape(xs, [-1, 1])))
+        # Interpolate line
+        from scipy.interpolate import make_interp_spline, BSpline
+        new_xs = np.linspace(np.min(xs), np.max(xs), 4*n_bins+1, endpoint=True)
+        new_ys = make_interp_spline(xs, pdf, k=3)(new_xs)
 #        pdf = pdf / np.sum(pdf)
         label = "$%s$" % (source.replace(" ", " \\ "))
-        lines = plt.plot(xs, pdf, label=label, color=color, marker=marker, markevery=2, markersize=2*self.line_width, linewidth=self.line_width)
+        lines = plt.plot(
+            new_xs, 
+            new_ys, 
+            label=label, 
+            **line_kwargs, 
+        )
         self.set("lines", self.get("lines") + lines)
         if fill:
             plt.fill_between(xs, 0, pdf, facecolor=color, alpha=0.2)
@@ -504,50 +643,59 @@ class Plotting(Container):
         y_max = -sys.float_info.max
         for line in self.get("lines"):
             y_max = max(y_max, np.max(line.get_ydata()))
-        self.lims(y_lim=[-0.002*y_max, y_max*1.01])
+        self.lims(ylim=[-0.002*y_max, y_max*1.01])
         self.legend()
         return self.lines
 
 
-    def legend(self, size=7):
-        plt.legend(prop={"size": size})
+    def legend(self, handles=None, labels=None, kwargs={}):
+        kwargs = util.merge_dicts({"size": 7}, kwargs)
+        if not (handles is None or labels is None):
+            plt.legend(handles, labels, prop=kwargs)
+        elif handles is None:
+            plt.legend(labels, prop=kwargs)
+        elif labels is None:
+            raise ValueError("Specified Artist handles but no labels for legend()")
+        else:
+            plt.legend(prop=kwargs)
 
-
-    def lims(self, x_lim=[None, None], y_lim=[None, None]):
+    def lims(self, xlim=[None, None], ylim=[None, None], margin=0.0):
         left, right = plt.xlim()
-        if not x_lim[0] is None:
-            if x_lim[0] == "min":
-                x_lim[0] = left
-            plt.xlim(left=x_lim[0])
-        if not x_lim[1] is None:
-            if x_lim[1] == "max":
-                x_lim[1] = right
-            plt.xlim(right=x_lim[1])
+        if not xlim[0] is None:
+            if xlim[0] == "min":
+                xlim[0] = left
+            plt.xlim(left=xlim[0]-margin)
+        if not xlim[1] is None:
+            if xlim[1] == "max":
+                xlim[1] = right
+            plt.xlim(right=xlim[1]+margin)
         bottom, top = plt.ylim()
-        if not y_lim[0] is None:
-            if y_lim[0] == "min":
-                y_lim[0] = bottom
-            plt.ylim(bottom=y_lim[0])
-        if not y_lim[1] is None:
-            if y_lim[1] == "max":
-                y_lim[1] = top
-            plt.ylim(top=y_lim[1])
+        if not ylim[0] is None:
+            if ylim[0] == "min":
+                ylim[0] = bottom
+            plt.ylim(bottom=ylim[0]-margin)
+        if not ylim[1] is None:
+            if ylim[1] == "max":
+                ylim[1] = top
+            plt.ylim(top=ylim[1]+margin)
         return left, right, bottom, top
-
 
     def ticks(self, xticks=[None, None], yticks=[None, None], xtick_kwargs={}, ytick_kwargs={}):
         xtick_indices, xtick_labels = plt.xticks(**xtick_kwargs)
-        if not xticks[1] is None:
+        if xticks == []:
+            plt.xticks([])
+        elif not xticks[1] is None:
             if xticks[0] is None:
                 xticks[0] = np.arange(len(xticks[1]))
             plt.xticks(xticks[0], xticks[1])
         ytick_indices, ytick_labels = plt.yticks(**ytick_kwargs)
-        if not yticks[1] is None:
+        if yticks == []:
+            plt.yticks([])
+        elif not yticks[1] is None:
             if yticks[0] is None:
                 yticks[0] = np.arange(len(yticks[1]))
             plt.yticks(yticks[0], yticks[1])
         return xtick_indices, xtick_labels, ytick_indices, ytick_labels
-
 
     def labels(self, xlabel=None, ylabel=None, xlabel_kwargs={}, ylabel_kwargs={}):
         if not xlabel is None:
@@ -555,6 +703,8 @@ class Plotting(Container):
         if not ylabel is None:
             plt.ylabel(ylabel, **ylabel_kwargs)
 
+    def figure(self, size=(8, 8)):
+        plt.figure(figsize=size)
 
     def save_figure(self, path, dpi=200):
         plt.savefig(path, bbox_inches="tight", dpi=dpi)
@@ -566,12 +716,18 @@ class Plotting(Container):
         plt.close()
 
 
+    def close(self):
+        plt.close()
+
+
     def plot_learning_curve(self, train, valid, test, path):
         plt.plot(train, color="k", label="Training", linewidth=self.line_width)
         plt.plot(valid, color="r", label="Validation", linewidth=self.line_width)
         plt.plot(test, color="g", label="Testing", linewidth=self.line_width)
+        plt.axvline(np.argsort(valid)[0], linestyle=":", color="k")
         ymax = max(max(train), max(valid), max(test))
-        plt.ylim(bottom=0, top=0.75*ymax)
+        bottom, top = plt.ylim()
+        plt.ylim(bottom=0, top=0.8*ymax)
         plt.ylabel("Mean Squared Error")
         plt.xlabel("Epoch")
         plt.legend()
@@ -579,548 +735,63 @@ class Plotting(Container):
         plt.close()
 
 
-    def _plot_spatiotemporal(self, name, var, partition):
-        if name == "original":
-            spatiotemporal = var.get(name, partition)
-            temporal_labels = var.get(name+"_temporal_labels", partition)
-            spatial_labels = var.get(name+"_spatial_labels", partition)
-            feature_labels = list(var.get("feature_index_map").keys())
-        elif name == "reduced":
-            channel_indices = var.get_reduced_channel_indices(
-                var.get("reduced_n_temporal", partition), 
-                1
-            )
-            response_indices = var.get("response_indices")
-            spatiotemporal = var.get(name, partition)[channel_indices][:,:,response_indices]
-            temporal_labels = var.get(name+"_temporal_labels", partition)[channel_indices]
-            spatial_labels = var.get("original_spatial_labels", partition)
-            feature_labels = list(var.get("feature_index_map").keys())
-            feature_labels = var.get("response_features")
-        elif "windowed" in name:
-            windowed = var.get(name, partition)
-            if "input" in name:
-                windowed_temporal_labels = var.get("input_windowed_temporal_labels", partition)
-                feature_labels = var.get("predictor_features")
-                window_n_temporal = var.get("n_temporal_in")
-            elif "output" in name:
-                windowed_temporal_labels = var.get("output_windowed_temporal_labels", partition)
-                feature_labels = var.get("response_features")
-                window_n_temporal = var.get("n_temporal_out")
-            else:
-                raise ValueError()
-            contiguous_window_indices = var.get_contiguous_window_indices(
-                window_n_temporal, 
-                var.get("n_windows", partition), 
-                1
-            )
-            spatiotemporal = np.reshape(
-                windowed[contiguous_window_indices,:,:,:], 
-                (-1, windowed.shape[2], windowed.shape[3])
-            )
-            temporal_labels = np.reshape(
-                windowed_temporal_labels[contiguous_window_indices,:], 
-                (-1)
-            )
-            spatial_labels = var.get("original_spatial_labels", partition)
-        path = var.get("plot_dir") + os.sep + "Spatiotemporal_Partition[%s]_Feature[%s]_Subbasins[%s]_Form[%s]_Source[%s].png" % (
-            partition,
-            "%s",
-            ",".join(spatial_labels),
-            name,
-            var.get("dataset", partition)
-        )
-        if len(spatial_labels) > 100:
-            return
-        print("NAME =", name, ",", "Partition =", partition)
-        self.plot_spatiotemporal(spatiotemporal, temporal_labels, spatial_labels, feature_labels, path)
-
-
-    def plot_spatiotemporal(self, spatiotemporal, temporal_labels, spatial_labels, feature_labels, path=""):
-        n_temporal = spatiotemporal.shape[0]
-        n_spatial = spatiotemporal.shape[1]
-        n_features = spatiotemporal.shape[2]
-        for i in range(n_features):
-            for j in range(n_spatial):
-                plt.plot(spatiotemporal[:,j,i], label=spatial_labels[j], linewidth=self.line_width)
-                y_min, y_max = np.min(spatiotemporal[:,j,i]), np.max(spatiotemporal[:,j,i])
-                print("SUBBASIN =", spatial_labels[j], "FEATURE =", feature_labels[i], "min-max = [%.3f, %.3f]" % (y_min, y_max))
-            temporal_indices = np.linspace(0, n_temporal-1, 8, dtype=np.int)
-            plt.xticks(temporal_indices, temporal_labels[temporal_indices], rotation=45)
-            y_min, y_max = np.min(spatiotemporal[:,:,i]), np.max(spatiotemporal[:,:,i])
-            n_decimals = max(3-len(str(int(y_max))), 0)
-            dtype, y_min, y_max = ([int, int(y_min), int(y_max)] if n_decimals == 0 else [float, y_min, y_max])
-            ytick_locs = np.around(np.linspace(y_min, y_max, 7, endpoint=True, dtype=dtype), n_decimals)
-            self.ticks(yticks=[ytick_labels, ytick_labels])
-            plt.legend()
-            if path == "":
-                plt.show()
-            else:
-                feature_path = path % (feature_labels[i])
-                self.save_figure(feature_path)
-        
-
-    def plot_reduced_historical(self, reduced_historical, reduced_historical_dates, subbasin_labels, feature, modifications="", plot_range=[0.0, 1.0]):
-        n_subbasins = reduced_historical.shape[1]
-        y_min = sys.float_info.max
-        y_max = sys.float_info.min
-        subbasin_indices = subbasin_labels - 1
-        alphas = [0.65, 0.65]
-        overlap_color = "brown"
-        overlap_color = "green"
-        overlap_color = "purple"
-        if overlap_color == "brown":
-            # Color pairs that create brown when combined
-            colors = ["purple", "yellow"]
-            colors = ["red", "green"]
-            colors = ["blue", "orange"]
-        if overlap_color == "green":
-            # Color pairs that create green when combined
-            colors = ["blue", "yellow"]
-        if overlap_color == "purple":
-            # Color pairs that create purple when combined
-            colors = ["blue", "red"]
-#            alphas = [1, 1]
-        background_color = "snow"
-        background_color = "whitesmoke"
-        background_color = "white"
-        plt.rcParams["axes.facecolor"] = background_color
-        start = round(plot_range[0] * reduced_historical.shape[0])
-        end = round(plot_range[1] * reduced_historical.shape[0])
-        for s in range(subbasin_labels.shape[0]):
-            subbasin_idx = subbasin_indices[s]
-            subbasin_label = subbasin_labels[s]
-            color = colors[s]
-            alpha = alphas[s]
-            plt.plot(reduced_historical[start:end,subbasin_idx], color=color, label="Subbasin %d" % (subbasin_label), linewidth=.65, alpha=alpha)
-#            plt.plot(reduced_historical[start:end,subbasin_idx], label="Subbasin %d" % (subbasin_label), linewidth=.65, alpha=alpha)
-            y_min = min(y_min, np.min(reduced_historical[:,subbasin_idx]))
-            y_max = max(y_max, np.max(reduced_historical[:,subbasin_idx]))
-        y_range = y_max - y_min
-        plt.ylim(y_min-0.05*y_range, y_max+0.05*y_range)
-        print("reduced_historical_dates =", reduced_historical_dates.shape, "=")
-        print(reduced_historical_dates)
-        print("start,end = %d,%d" % (start,end))
-        start = round(plot_range[0] * reduced_historical_dates.shape[0])
-        end = round(plot_range[1] * reduced_historical_dates.shape[0])
-        indices = np.linspace(start, end-1, 10, dtype=np.int)
-        plt.xticks(indices-start, reduced_historical_dates[indices], rotation=45, fontsize=8)
-        plt.xlabel("Time (%d:1 Reduction)" % (timestep_reduction_factor))
-        mods = re.sub("difference\d", "difference", modifications)
-        modification_ylabel_map = {
-            "": "%s (%s)",
-            "min-max": "Min-Max Normalized %s",
-            "z-score": "%s Z-score",
-            "tanh": "Tanh Normalized %s",
-            "difference": "Differenced %s",
-            "z-score,difference": "Differenced %s Z-score",
-            "log": "Log Transformed %s",
-            "cube-root": "Cube-Root Transformed %s"
-        }
-        ylabel = modification_ylabel_map[mods] % (feature_fullname_map[feature], feature_SIunit_map[feature])
-        plt.ylabel(ylabel)
-        plt.legend(prop={"size":5})
-        filename = "ReducedHistorical_Subbasins[%s]_Feature[%s]_DatesInterval[%s,%s]_TimeReduction[%s,%d,%d]_Modifications[%s]_Range[%.3f,%.3f].png" % (
-            ",".join(map(str, subbasin_labels)),
-            feature,
-            train_dates_interval[0],
-            train_dates_interval[1],
-            timestep_reduction_method,
-            timestep_reduction_factor,
-            timestep_reduction_stride,
-            modifications,
-            plot_range[0],
-            plot_range[1]
-        )
-        path = plot_dir + os.sep + filename
-        plt.savefig(path, bbox_inches="tight", dpi=200)
-        plt.close()
-
-
-    def plot_subbasin_correlation(self, feature_corrcoefs, feature, modifications, vmin_vmax=[-1.0,1.0], plot_range=[0.0, 1.0]):
-        n_subbasins = int(feature_corrcoefs.shape[1] * 1)
-        start = round(plot_range[0] * n_subbasins) 
-        end = round(plot_range[1] * n_subbasins) 
-        corrcoefs = feature_corrcoefs
-        vmin = vmin_vmax[0]
-        vmax = vmin_vmax[1]
-        cmap = "hot"
-        cmap = "seismic"
-        cmap = "coolwarm"
-        cmap = "inferno"
-        cmap = "afmhot"
-        im = plt.imshow(corrcoefs[start:end,:], cmap=cmap, aspect="auto", interpolation=None, vmin=vmin, vmax=vmax, origin="lower")
-        xtick_labels = np.linspace(1, n_subbasins, 10, dtype=np.int16)
-        xtick_indices = xtick_labels - 1
-        ytick_labels = np.linspace(start+1, end, 10, dtype=np.int16)
-        ytick_indices = ytick_labels - 1 - start
-        plt.xticks(xtick_indices, xtick_labels, fontsize=5, rotation=45)
-        plt.yticks(ytick_indices, ytick_labels, fontsize=5)
-        plt.ylabel("Subbasin ID", fontsize=10)
-        plt.xlabel("Subbasin ID", fontsize=10)
-        cbar = plt.colorbar(im)
-        cbar_label = "Pearson Correlation"
-        cbar.ax.set_ylabel(cbar_label, rotation=-90, va="bottom", fontsize=10)
-        filename = "SubbasinSimilarityHeatmap_Feature[%s]_Modifications[%s]_Metric[%s].png" % (
-            feature,
-            modifications,
-            "PearsonCorrelation"
-        )
-        path = plot_dir + os.sep + filename
-        plt.savefig(path, bbox_inches="tight", dpi=200)
-        plt.close()
-
-
-    def plot_subbasin_dynamictimewarpings(self, subbasin_dtws, feature, modifications, plot_range=[0.0, 1.0]):
-        n_subbasins = int(subbasin_dtws.shape[0] * 1)
-        start = round(plot_range[0] * n_subbasins) 
-        end = round(plot_range[1] * n_subbasins) 
-        vmin = np.min(subbasin_dtws)
-        vmax = np.max(subbasin_dtws)
-#        vmin = 0.0
-#        vmin = -1.0
-#        vmax = 1.0
-        cmap = "hot"
-        cmap = "seismic"
-        cmap = "coolwarm"
-        cmap = "inferno"
-        cmap = "afmhot"
-        im = plt.imshow(subbasin_dtws[start:end,:], cmap=cmap, aspect="auto", interpolation=None, vmin=vmin, vmax=vmax, origin="lower")
-        xtick_labels = np.linspace(1, n_subbasins, 10, dtype=np.int16)
-        xtick_indices = xtick_labels - 1
-        ytick_labels = np.linspace(start+1, end, 10, dtype=np.int16)
-        ytick_indices = ytick_labels - 1 - start
-        plt.xticks(xtick_indices, xtick_labels, fontsize=5, rotation=45)
-        plt.yticks(ytick_indices, ytick_labels, fontsize=5)
-        plt.ylabel("Subbasin ID", fontsize=10)
-        plt.xlabel("Subbasin ID", fontsize=10)
-        cbar = plt.colorbar(im)
-        cbar_label = "Normalized Dynamic Time Warping Distance"
-        cbar.ax.set_ylabel(cbar_label, rotation=-90, va="bottom", fontsize=10)
-        filename = "SubbasinDistanceHeatmap_Feature[%s]_Modifications[%s]_Metric[%s].png" % (
-            feature,
-            modifications,
-            "DynamicTimeWarping"
-        )
-        path = plot_dir + os.sep + filename
-        plt.savefig(path, bbox_inches="tight", dpi=200)
-        plt.close()
-
-
-    def plot_subbasin_mean_similarities(self, feature_mean_similarities, feature):
-        n_daysofyear = feature_mean_similarities.shape[0]
-        n_subbasins = int(feature_mean_similarities.shape[1] * 1)
-        n_features = feature_mean_similarities.shape[2]
-        xtick_labels = month_labels
-        idx = feature_idx_map[feature]
-        cmap = "seismic"
-        cmap = "hot"
-        print("Min Mean Similarity =", np.min(feature_mean_similarities[:,:n_subbasins,idx]))
-        print("Max Mean Similarity =", np.max(feature_mean_similarities[:,:n_subbasins,idx]))
-        ytick_labels = np.linspace(1, n_subbasins, 10, dtype=np.int16)
-        ytick_indices = ytick_labels - 1
-        mean_similarities = feature_mean_similarities[:,:n_subbasins,idx]
-        # Plot Means
-        mean_similarities = np.swapaxes(mean_similarities, 0, 1)
-        min_mean = np.min(mean_similarities)
-        max_mean = np.max(mean_similarities)
-        im = plt.imshow(mean_similarities, cmap=cmap, vmin=min_mean, vmax=max_mean, aspect="auto", interpolation=None, origin="lower")
-        plt.xticks(xtick_indices, xtick_labels, fontsize=5, rotation=45)
-        plt.yticks(ytick_indices, ytick_labels, fontsize=5)
-        plt.xlabel("Subbasin ID", fontsize=10)
-        plt.ylabel("Month", fontsize=10)
-        cbar = plt.colorbar(im)
-        cbar_label = "Mean" + " " + feature_fullname_map[feature] + " " + "MSE"
-        cbar_label = "RMSE"
-        cbar.ax.set_ylabel(cbar_label, rotation=-90, va="bottom", fontsize=10)
-        filename = "SubbasinSimilarityHeatmap_Feature[%s]_Metric[%s].png" % (feature, "Mean-RMSE")
-        path = plot_dir + os.sep + filename
-        plt.savefig(path, bbox_inches="tight", dpi=200)
-        plt.close()
-
-
-    def plot_subbasin_coefvar_similarities(self, feature_coefvar_similarities, feature):
-        n_daysofyear = feature_coefvar_similarities.shape[0]
-        n_subbasins = int(feature_coefvar_similarities.shape[1] * 1)
-        n_features = feature_coefvar_similarities.shape[2]
-        xtick_labels = month_labels
-        idx = feature_idx_map[feature]
-        cmap = "seismic"
-        cmap = "hot"
-        print("Min Coefficient of Variation Similarity =", np.min(feature_similarities[:,:n_subbasins,idx]))
-        print("Max Coefficient of Variation Similarity =", np.max(feature_similarities[:,:n_subbasins,idx]))
-        ytick_labels = np.linspace(1, n_subbasins, 10, dtype=np.int16)
-        ytick_indices = ytick_labels - 1
-        coefvar_similarities = feature_coefvar_similarities[:,:n_subbasins,idx]
-        # Plot Coefficients of Variation
-        coefvar_similarities = np.swapaxes(coefvar_similarities, 0, 1)
-        min_coefvar = np.min(coefvar_similarities)
-        max_coefvar = np.max(coefvar_similarities)
-        im = plt.imshow(coefvar_similarities, cmap=cmap, vmin=min_coefvar, vmax=max_coefvar, aspect="auto", interpolation=None, origin="lower")
-        plt.yticks(ytick_indices, ytick_labels, fontsize=5)
-        plt.ylabel("Subbasin ID", fontsize=10)
-        plt.xlabel("Subbasin ID", fontsize=10)
-        plt.xticks(xtick_indices, xtick_labels, fontsize=5, rotation=45)
-        cbar = plt.colorbar(im)
-        cbar_label = feature_fullname_map[feature] + " " + "Coefficient of Variation $(\\frac{\sigma}{\mu})$ MSE"
-        cbar_label = "RMSE"
-        cbar.ax.set_ylabel(cbar_label, rotation=-90, va="bottom", fontsize=10)
-        filename = "SubbasinSimilarityHeatmap_Feature[%s]_Metric[%s].png" % (feature, "CoefficientOfVariation-RMSE")
-        path = plot_dir + os.sep + filename
-        plt.savefig(path, bbox_inches="tight", dpi=200)
-        plt.close()
-
-
-    def plot_subbasin_seasonal_PDFs(self, PDFs, ranges, subbasin_idx, feature):
-        feature_idx = feature_idx_map[feature]
-        feature_min = ranges[0,subbasin_idx,feature_idx]
-        feature_max = ranges[1,subbasin_idx,feature_idx]
-        ytick_labels = np.round(np.linspace(feature_min, feature_max, 10), 1)
-        ytick_indices = np.linspace(0, PDFs.shape[0]-1, 10)
-        n_daysofyear = PDFs.shape[1]
-        xtick_labels = month_labels
-        xtick_indices = np.linspace(1, n_daysofyear, len(xtick_labels))
-        # Plot PDFs
-        print(PDFs[:,:,subbasin_idx,feature_idx])
-        cmap = "afmhot"
-        vmin = np.min(PDFs[:,:,subbasin_idx,feature_idx])
-        vmax = np.max(PDFs[:,:,subbasin_idx,feature_idx])
-        im = plt.imshow(PDFs[:,:,subbasin_idx,feature_idx], cmap=cmap, aspect="auto", interpolation="gaussian", vmin=vmin, vmax=vmax, origin="lower")
-        plt.yticks(ytick_indices, ytick_labels, fontsize=5)
-        y_label = feature_fullname_map[feature] + " " + feature_SIunit_map[feature]
-        plt.ylabel(y_label, fontsize=10)
-        plt.xticks(xtick_indices, xtick_labels, fontsize=5, rotation=45)
-        cbar = plt.colorbar(im)
-        cbar_label = "Probability"
-        cbar.ax.set_ylabel(cbar_label, rotation=-90, va="bottom", fontsize=10)
-        filename = "SubbasinSeasonalityHeatmap_Subbasin[%d]_Feature[%s]_Metric[%s].png" % (subbasin_idx+1, feature, "PDF")
-        path = plot_dir + os.sep + filename
-        plt.savefig(path, bbox_inches="tight", dpi=200)
-        plt.close()
-
-
-    def plot_subbasin_seasonal_means(self, feature_means, feature):
-        n_daysofyear = feature_means.shape[0]
-        n_subbasins = int(feature_means.shape[1] * 1)
-        n_features = feature_means.shape[2]
-        xtick_labels = month_labels
-        idx = feature_idx_map[feature]
-        print("Min Mean =", np.min(feature_means[:,:n_subbasins,idx]))
-        print("Max Mean =", np.max(feature_means[:,:n_subbasins,idx]))
-        ytick_labels = np.linspace(1, n_subbasins, 10, dtype=np.int16)
-        ytick_indices = ytick_labels - 1
-        xtick_indices = np.linspace(1, n_daysofyear, len(xtick_labels))
-        means = feature_means[:,:n_subbasins,idx]
-        # Plot Means
-        means = np.swapaxes(means, 0, 1)
-        min_mean = np.min(means)
-        max_mean = np.max(means)
-        im = plt.imshow(means, cmap="hot", aspect="auto", interpolation=None, vmin=min_mean, vmax=max_mean, origin="lower")
-        plt.yticks(ytick_indices, ytick_labels, fontsize=5)
-        plt.ylabel("Subbasin ID", fontsize=10)
-        plt.xticks(xtick_indices, xtick_labels, fontsize=5, rotation=45)
-        cbar = plt.colorbar(im)
-        cbar_label = "Mean" + " " + feature_fullname_map[feature] + " " + feature_SIunit_map[feature]
-        cbar.ax.set_ylabel(cbar_label, rotation=-90, va="bottom", fontsize=10)
-        filename = "SubbasinSeasonalityHeatmap_Feature[%s]_Metric[%s].png" % (feature, "Mean")
-        path = plot_dir + os.sep + filename
-        plt.savefig(path, bbox_inches="tight", dpi=200)
-        plt.close()
-
-
-    def plot_subbasin_seasonal_coefvars(self, feature_coefvars, feature):
-        n_daysofyear = feature_coefvars.shape[0]
-        n_subbasins = int(feature_coefvars.shape[1] * 1)
-        n_features = feature_coefvars.shape[2]
-        xtick_labels = month_labels
-        idx = feature_idx_map[feature]
-        print("Min Coefficient of Variation =", np.min(feature_coefvars[:,:n_subbasins,idx]))
-        print("Max Coefficient of Variation =", np.max(feature_coefvars[:,:n_subbasins,idx]))
-        ytick_labels = np.linspace(1, n_subbasins, 10, dtype=np.int16)
-        ytick_indices = ytick_labels - 1
-        xtick_indices = np.linspace(1, n_daysofyear, len(xtick_labels))
-        coefvars = feature_coefvars[:,:n_subbasins,idx]
-        # Plot Coefficients of Variation
-        coefvars = np.swapaxes(coefvars, 0, 1)
-        min_cov = np.min(coefvars)
-        max_cov = np.max(coefvars)
-        im = plt.imshow(coefvars, cmap="hot", aspect="auto", interpolation=None, vmin=min_cov, vmax=max_cov, origin="lower")
-        plt.yticks(ytick_indices, ytick_labels, fontsize=5)
-        plt.ylabel("Subbasin ID", fontsize=10)
-        plt.xticks(xtick_indices, xtick_labels, fontsize=5, rotation=45)
-        cbar = plt.colorbar(im)
-        cbar_label = feature_fullname_map[feature] + " " + "Coefficient of Variation $(\\frac{\sigma}{\mu})$"
-        cbar.ax.set_ylabel(cbar_label, rotation=-90, va="bottom", fontsize=10)
-        filename = "SubbasinSeasonalityHeatmap_Feature[%s]_Metric[%s].png" % (feature, "CoefficientOfVariation")
-        path = plot_dir + os.sep + filename
-        plt.savefig(path, bbox_inches="tight", dpi=200)
-        plt.close()
-
-
-    def plot_miscellaneous(self):
-
-        plot_all = True
-        plot_individual = True
-        plot_regions = True
-
-        colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-        print("Colors =", colors)
-        all_subbasins = np.arange(1, n_subbasins)
-        all_subbasins = [1, 2, 7, 9, 19, 52]
-        std_alphas = {1:0.5, 2:0.25, 3:0.125}
-#std_alphas = {1:0.5, 2:0.5, 3:0.5}
-        days_to_month = [1, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366]
-        days_to_month = np.array(days_to_month, dtype=np.int16)
-        xtick_indices = days_to_month - 1
-        xtick_labels = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "January"]
-        xtick_labels = np.array(xtick_labels, dtype=object)
-        n_stds = 1
-
-        n_subbasins = len(all_subbasins)
-        if plot_all:
-            for j in range(2, n_subbasins+1):
-                subbasins = all_subbasins[:j]
-                c = 0
-                for subbasin in subbasins:
-                    s = subbasin - 1
-                    means = feature_means[:,s,streamflow_idx]
-                    stds = feature_stds[:,s,streamflow_idx]
-                    plt.plot(means, linestyle="-", color=colors[c], label="Subbasin %d Streamflow Mean"%(subbasin))
-                    if plot_regions:
-                        for i in range(n_stds,0,-1):
-                            lower_bounds = means - stds * i
-                            upper_bounds = means + stds * i
-                            plt.fill_between(np.arange(n_daysofyear), lower_bounds, upper_bounds, alpha=std_alphas[i], color=colors[c])
-                    plt.xticks(xtick_indices, xtick_labels, fontsize=5, rotation=45)
-                    plt.ylabel("Stream Flow (cm^3/s)")
-                    plt.xlabel("Day of Year")
-                    plt.legend(prop={"size":5})
-                    c += 1
-                subbasin_labels = map(str, subbasins)
-                plt.savefig("./Test/Subbasins[%s].png"%(",".join(subbasin_labels)), dpi=200)
-                plt.close()
-        if plot_individual:
-            c = 0
-            for subbasin in subbasins:
-                s = subbasin - 1
-                means = feature_means[:,s,streamflow_idx]
-                stds = feature_stds[:,s,streamflow_idx]
-                plt.plot(np.arange(n_daysofyear), means, linestyle="-", label="Subbasin %d Mean"%(subbasin), color=colors[c])
-                if plot_regions:
-#                for i in range(n_stds,0,-1):
-                    for i in range(1,n_stds+1):
-                        lower_bounds = means - stds * i
-                        upper_bounds = means + stds * i
-                        plt.fill_between(np.arange(n_daysofyear), lower_bounds, upper_bounds, alpha=std_alphas[i], label="Subbasin %d Standard Deviation %d"%(subbasin,i), color=colors[c])
-                plt.xticks(xtick_indices, xtick_labels, fontsize=5, rotation=45)
-                plt.ylabel("Stream Flow (cm^3/s)")
-                plt.xlabel("Day of Year")
-                plt.legend(prop={"size":5})
-                plt.savefig("./Test/Subbasin[%d].png"%(subbasin), dpi=200)
-                plt.close()
-
-
-    def plot_correlation_error_pairs(self, correlations, errors, partition, wabash_data, args):
-        n_responses = wabash_data.get("n_responses")
-        n_subbasins = wabash_data.get("n_subbasins", partition=partition)
-        subbasin_labels = wabash_data.get("subbasin_labels", partition=partition)
-        subbasin_indices = wabash_data.get("subbasin_indices", partition=partition)
-        response_features = wabash_data.get("response_features")
-        historical_feature_index_map = wabash_data.get("historical_feature_index_map")
-        train_subbasin_indices = wabash_data.get("subbasin_indices", partition="train")
-        train_subbasin_idx = train_subbasin_indices[0]
-        for o in range(n_responses):
-            feature = response_features[o]
-            corrs = correlations[train_subbasin_idx,subbasin_indices,o]
-            errs = errors[:,o]
-            plt.scatter(corrs, errs)
-            common_subbasin_indices = np.intersect1d(train_subbasin_indices, subbasin_indices)
-            if common_subbasin_indices.shape[0] > 0:
-                corrs = correlations[train_subbasin_idx,common_subbasin_indices,o]
-                errs = errors[common_subbasin_indices,o]
-                plt.scatter(corrs, errs, color="r")
-            xlabel = "Pearson Correlation"
-            plt.xlabel(xlabel)
-            ylabel = feature_fullname_map[feature] + " " + "NRMSE"
-            plt.ylabel(ylabel)
-#            plt.xlim(-1, 1)
-            filename = "SubbasinCorrelationInferenceErrorScatter_Partition[%s]_Feature[%s].png" % (partition, feature)
-            path = plot_dir + os.sep + filename
-            plt.savefig(path, bbox_inches="tight", dpi=200)
-            plt.close()
-
-
     # Precondition: predictions and groundtruth have the following shapes
-    #   predictions.shape=[n_windows, n_temporal_in, n_spatial, n_responses]
+    #   Yhats.shape=[n_windows, n_temporal_in, n_spatial, n_responses]
     #   groundtruth.shape=[n_windows, n_temporal_in, n_spatial, n_responses]
-    def plot_model_fit(self, prediction, spatmp, partition, plt_range, plt_dir, var):
-        exec_var, plt_var, proc_var = var.get("execution"), var.get("plotting"), var.get("processing")
-        dataset, options = exec_var.get("dataset", partition), plt_var.get("options")
-        n_temporal_in = spatmp.get("windowed").get("n_temporal_in")
-        n_temporal_out = spatmp.get("windowed").get("n_temporal_out")
-        n_predictors = spatmp.get("misc").get("n_predictors")
-        n_responses = spatmp.get("misc").get("n_responses")
-        response_features = spatmp.get("misc").get("response_features")
-        response_indices = spatmp.get("misc").get("response_indices")
-        n_spatial = spatmp.get("original").get("n_spatial", partition)
-        spatial_labels = spatmp.get("original").get("spatial_labels", partition)
-        spatial_indices = spatmp.get("original").get("spatial_indices", partition)
-        mins = spatmp.filter_axes(
-            spatmp.get("metrics").get("minimums"),
-            [1, 2],
-            [spatial_indices, response_indices]
-        )
-        maxes = spatmp.filter_axes(
-            spatmp.get("metrics").get("maximums"),
-            [1, 2],
-            [spatial_indices, response_indices]
-        )
-        meds = spatmp.filter_axes(
-            spatmp.get("metrics").get("medians"),
-            [1, 2],
-            [spatial_indices, response_indices]
-        )
-        means = spatmp.filter_axes(
-            spatmp.get("metrics").get("means"),
-            [1, 2],
-            [spatial_indices, response_indices]
-        )
-        stddevs = spatmp.filter_axes(
-            spatmp.get("metrics").get("standard_deviations"),
-            [1, 2],
-            [spatial_indices, response_indices]
-        )
-        transformation_resolution = proc_var.get("transformation_resolution")
-        original_temporal_labels = spatmp.get("original").get("temporal_labels", partition)
-        reduced_features = spatmp.get("reduced").get("features", partition)
-        reduced_temporal_labels = spatmp.get("reduced").get("temporal_labels", partition)
-        reduced_temporal_indices = spatmp.get("reduced").get("temporal_indices", partition)
-        reduced_n_temporal = spatmp.get("reduced").get("n_temporal", partition)
-        windowed_output_features = spatmp.get("windowed").get("output_features", partition)
-        windowed_output_temporal_labels = spatmp.get("windowed").get(
-            "output_temporal_labels", 
+    def plot_model_fit(self, Yhat, spatmp, partition, var):
+        # Unpacke variables
+        exec_var, plt_var, proc_var = var.execution, var.plotting, var.processing
+        plt_dir, line_opts, fig_opts = plt_var.get(["plot_dir", "line_options", "figure_options"])
+        line_kwargs = plt_var.line_kwargs
+        dataset = exec_var.get("dataset", partition)
+        n_temporal_in, n_temporal_out = var.mapping.temporal_mapping
+        n_predictors, n_responses = spatmp.misc.get(["n_predictors", "n_responses"])
+        response_features, response_indices = spatmp.misc.get(["response_features", "response_indices"])
+        n_spatial, spatial_labels, spatial_indices = spatmp.original.get(
+            ["n_spatial", "spatial_labels", "spatial_indices"], 
             partition
         )
-        n_windows = spatmp.get("windowed").get("n_windows", partition)
-        temporal_channel_indices = spatmp.get_reduced_channel_indices(reduced_n_temporal, 1)
-        contiguous_window_indices = spatmp.get_contiguous_window_indices(
-            n_temporal_out,
-            n_windows,
-            1
+        # Filter metrics
+        mins = spatmp.filter_axis(
+            spatmp.reduced_metrics.minimums,
+            [1, 2],
+            [spatial_indices, response_indices]
         )
-        prediction = prediction[contiguous_window_indices,:,:,:]
-        temporal_channel_idx = 0
-        gt = spatmp.filter_axes(
-            reduced_features[temporal_channel_indices],
-            [2],
-            [spatmp.get("misc").get("response_indices")]
+        maxes = spatmp.filter_axis(
+            spatmp.reduced_metrics.maximums,
+            [1, 2],
+            [spatial_indices, response_indices]
         )
-        windowed_output_temporal_labels = windowed_output_temporal_labels[contiguous_window_indices]
-        temporal_labels = reduced_temporal_labels[temporal_channel_idx,:]
-        dayofyear_indices = util.convert_dates_to_daysofyear(temporal_labels) - 1
-        windowed_output_dayofyear_indices = util.convert_dates_to_daysofyear(windowed_output_temporal_labels).reshape(-1) - 1
-        event_data = np.zeros((gt.shape[0],n_spatial,n_responses,2))
+        meds = spatmp.filter_axis(
+            spatmp.reduced_metrics.medians,
+            [1, 2],
+            [spatial_indices, response_indices]
+        )
+        means = spatmp.filter_axis(
+            spatmp.reduced_metrics.means,
+            [1, 2],
+            [spatial_indices, response_indices]
+        )
+        stddevs = spatmp.filter_axis(
+            spatmp.reduced_metrics.standard_deviations,
+            [1, 2],
+            [spatial_indices, response_indices]
+        )
+        # Get groundtruth data (Y, etc) then filter and reformat predictions (Yhat) to match groundtruth
+        #   Pull groundtruth data - response_features Y, temporal_labels, and their periodic_indices
+        Y = spatmp.reduced.get("response_features", partition)
+        temporal_labels = spatmp.reduced.get("temporal_labels", partition)
+        periodic_indices = spatmp.reduced.get("periodic_indices", partition)
+        Y, temporal_labels, periodic_indices = Y[0,:,:,:], temporal_labels[0,:], periodic_indices[0,:]
+        #   Reformat and filter predictions - filter for contiguous outputs then reshape
+        Yhat = np.reshape(Yhat, (spatmp.reduced.n_channel, -1) + Yhat.shape[1:])
+        contiguous_window_indices = util.contiguous_window_indices(Yhat.shape[1], Yhat.shape[2], 1)
+        Yhat = Yhat[0,contiguous_window_indices,:,:,:]
+        Yhat = np.reshape(Yhat, (-1,) + Yhat.shape[2:])
+        event_data = np.zeros((Y.shape[0],n_spatial,n_responses,2))
         cache_plot_data = False
-        cache_plot_data = True
+#        cache_plot_data = True
+        plt_range = [0.0, 1.0]
         # Set colors
         alpha_min = 0.40
         alpha_max = 0.80
@@ -1130,10 +801,10 @@ class Plotting(Container):
             alphas = np.flip(alphas)
         else:
             alphas = np.array([alpha_max])
-        cmap = plt.get_cmap("Greys")
+        cmap = plt.get_cmap(line_kwargs["groundtruth"]["color"])
         groundtruth_colors = [cmap(1.25*i) for i in alphas]
-        cmap = plt.get_cmap("Reds")
-        prediction_colors = [cmap(i) for i in alphas]
+        cmap = plt.get_cmap(line_kwargs["prediction"]["color"])
+        Yhat_colors = [cmap(i) for i in alphas]
         cmap = plt.get_cmap("Blues")
         median_colors = [cmap(i) for i in alphas]
         cmap = plt.get_cmap("Blues")
@@ -1142,24 +813,19 @@ class Plotting(Container):
         std_colors = [cmap(0.25*i) for i in alphas]
         cmap = plt.get_cmap("Reds")
         extreme_colors = [cmap(1.0*i) for i in alphas]
-        feature_plot_order_map = {"SWmm": "ascending", "FLOW_OUTcms": "descending"}
         for o in range(n_responses):
             y_min, y_max = sys.float_info.max, sys.float_info.min
-            response_prediction = prediction[:,:,:,o]
-            response_gt = gt[:,:,o]
             spatial_indices = np.arange(n_spatial)
-            if feature_plot_order_map[response_features[o]] == "descending":
+            if self.feature_plot_order_map[response_features[o]] == "descending":
                 spatial_indices = np.flip(spatial_indices)
             n_spa_plotted, n_spa_per_plt = 0, plt_var.get("n_spatial_per_plot")
             for s in spatial_indices:
-                spatial_response_prediction = np.reshape(response_prediction[:,:,s], (-1))
-                spatial_response_gt = np.reshape(response_gt[:,s], (-1))
-                if "confusion" in options:
+                if "confusion" in line_opts:
                     self._plot_zscore_confusion(
-                        spatial_response_prediction, 
-                        spatial_response_gt[n_temporal_in:],
-                        means[dayofyear_indices[n_temporal_in:],s,o], 
-                        stddevs[dayofyear_indices[n_temporal_in:],s,o]
+                        Yhat[:,s,o], 
+                        Y[:,s,o][n_temporal_in:],
+                        means[periodic_indices[n_temporal_in:],s,o], 
+                        stddevs[periodic_indices[n_temporal_in:],s,o]
                     )
                     path = plt_dir + os.sep + "Confusion_Partition[%s]_Subbasins[%s]_Response[%s].png" % (
                         partition, 
@@ -1167,41 +833,42 @@ class Plotting(Container):
                         response_features[o]
                     )
                     self.save_figure(path)
-                if "groundtruth" in options:
+                if "groundtruth" in line_opts:
                     self._plot_groundtruth(
-                        spatial_response_gt, 
+                        Y[:,s,o], 
                         dataset, 
                         n_spatial, 
                         spatial_labels[s], 
                         n_spa_per_plt,
-                        groundtruth_colors[n_spa_plotted%n_spa_per_plt]
+                        groundtruth_colors[n_spa_plotted%n_spa_per_plt], 
                     )
-                if "prediction" in options:
+                if "prediction" in line_opts:
                     self._plot_prediction(
-                        spatial_response_prediction, 
+                        Yhat[:,s,o], 
                         n_temporal_in, 
                         n_temporal_out, 
                         n_spatial, 
                         spatial_labels[s], 
                         n_spa_per_plt,
-                        prediction_colors[n_spa_plotted%n_spa_per_plt]
+                        Yhat_colors[n_spa_plotted%n_spa_per_plt], 
+                        line_kwargs["prediction"]["label"], 
                     )
-                if "groundtruth_extremes" in options:
+                if "groundtruth_extremes" in line_opts:
                     self._plot_groundtruth_extremes(
-                        spatial_response_gt, 
-                        means[dayofyear_indices,s,o], 
-                        stddevs[dayofyear_indices,s,o], 
+                        Y[:,s,o], 
+                        means[periodic_indices,s,o], 
+                        stddevs[periodic_indices,s,o], 
                         dataset, 
                         n_spatial, 
                         spatial_labels[s], 
                         n_spa_per_plt,
                         plt_range
                     )
-                if "prediction_extremes" in options:
+                if "prediction_extremes" in line_opts:
                     self._plot_prediction_extremes(
-                        spatial_response_prediction, 
-                        means[windowed_output_dayofyear_indices,s,o], 
-                        stddevs[windowed_output_dayofyear_indices,s,o], 
+                        Yhat[:,s,o], 
+                        means[windowed_output_periodic_indices,s,o], 
+                        stddevs[windowed_output_periodic_indices,s,o], 
                         n_temporal_in, 
                         n_temporal_out, 
                         n_spatial, 
@@ -1209,15 +876,15 @@ class Plotting(Container):
                         n_spa_per_plt,
                         plt_range
                     )
-                if len(re.findall(".*median", ",".join(options))) > 0:
-                    if "median" in options:
-                        spatial_response_meds = meds[dayofyear_indices,s,o]
-                    elif "temporal_median" in options:
-                        spatial_response_meds = np.median(meds[dayofyear_indices,:,o], axis=1)
-                    elif "spatial_median" in options:
+                if len(re.findall(".*median", ",".join(line_opts))) > 0:
+                    if "median" in line_opts:
+                        spatial_response_meds = meds[periodic_indices,s,o]
+                    elif "temporal_median" in line_opts:
+                        spatial_response_meds = np.median(meds[periodic_indices,:,o], axis=1)
+                    elif "spatial_median" in line_opts:
                         spatial_response_med = np.median(meds[:,s,o], axis=0)
                         spatial_response_meds = np.tile(spatial_response_med, temporal_labels.shape[0])
-                    elif "feature_median" in options:
+                    elif "feature_median" in line_opts:
                         spatial_response_med = np.median(meds[:,s,o], axis=(0,1))
                         spatial_response_meds = np.tile(spatial_response_med, temporal_labels.shape[0])
                     label = "Median"
@@ -1226,15 +893,15 @@ class Plotting(Container):
                     plt.plot(spatial_response_meds, color=median_colors[s], linestyle="-.", label=label, linewidth=self.line_width)
                     y_min = min(y_min, np.min(spatial_response_meds))
                     y_max = max(y_max, np.max(spatial_response_meds))
-                if len(re.findall(".*mean", ",".join(options))) > 0:
-                    if "mean" in options:
-                        spatial_response_means = means[dayofyear_indices,s,o]
-                    elif "temporal_mean" in options:
-                        spatial_response_means = np.mean(means[dayofyear_indices,:,o], axis=1)
-                    elif "spatial_mean" in options:
+                if len(re.findall(".*mean", ",".join(line_opts))) > 0:
+                    if "mean" in line_opts:
+                        spatial_response_means = means[periodic_indices,s,o]
+                    elif "temporal_mean" in line_opts:
+                        spatial_response_means = np.mean(means[periodic_indices,:,o], axis=1)
+                    elif "spatial_mean" in line_opts:
                         spatial_response_mean = np.mean(means[:,s,o], axis=0)
                         spatial_response_means = np.tile(spatial_response_mean, temporal_labels.shape[0])
-                    elif "feature_mean" in options:
+                    elif "feature_mean" in line_opts:
                         spatial_response_mean = np.mean(means[:,s,o], axis=(0,1))
                         spatial_response_means = np.tile(spatial_response_mean, temporal_labels.shape[0])
                     label = "Mean"
@@ -1246,19 +913,19 @@ class Plotting(Container):
                     plt.plot(spatial_response_means, color=mean_colors[s], linestyle="-", label=label, linewidth=self.line_width)
                     y_min = min(y_min, np.min(spatial_response_means))
                     y_max = max(y_max, np.max(spatial_response_means))
-                if len(re.findall(".*stddev", ",".join(options))) > 0:
-                    if "stddev" in options:
-                        spatial_response_stddevs = stddevs[dayofyear_indices,s,o]
-                        spatial_response_means = means[dayofyear_indices,s,o]
-                    elif "temporal_stddev" in options:
-                        spatial_response_stddevs = np.std(stddevs[dayofyear_indices,:,o], axis=1)
-                        spatial_response_means = np.mean(means[dayofyear_indices,:,o], axis=1)
-                    elif "spatial_stddev" in options:
+                if len(re.findall(".*stddev", ",".join(line_opts))) > 0:
+                    if "stddev" in line_opts:
+                        spatial_response_stddevs = stddevs[periodic_indices,s,o]
+                        spatial_response_means = means[periodic_indices,s,o]
+                    elif "temporal_stddev" in line_opts:
+                        spatial_response_stddevs = np.std(stddevs[periodic_indices,:,o], axis=1)
+                        spatial_response_means = np.mean(means[periodic_indices,:,o], axis=1)
+                    elif "spatial_stddev" in line_opts:
                         spatial_response_stddev = np.std(stddevs[:,s,o], axis=0)
                         spatial_response_stddevs = np.tile(spatial_response_stddev, temporal_labels.shape[0])
                         spatial_response_mean = np.mean(means[:,s,o], axis=0)
                         spatial_response_means = np.tile(spatial_response_mean, temporal_labels.shape[0])
-                    elif "feature_stddev" in options:
+                    elif "feature_stddev" in line_opts:
                         spatial_response_stddev = np.std(stddevs[:,s,o], axis=(0,1))
                         spatial_response_stddevs = np.tile(spatial_response_stddev, temporal_labels.shape[0])
                         spatial_response_mean = np.mean(means[:,s,o], axis=(0,1))
@@ -1285,67 +952,52 @@ class Plotting(Container):
                         plt.fill_between(indices, lower_bounds, upper_bounds, color=std_colors[i], linestyle="-", label=label, linewidth=self.line_width)
                     y_min = min(y_min, np.min(lower_bounds))
                     y_max = max(y_max, np.max(upper_bounds))
-                y_min = min(y_min, np.min(spatial_response_prediction))
-                y_max = max(y_max, np.max(spatial_response_prediction))
-                y_min = min(y_min, np.min(spatial_response_gt))
-                y_max = max(y_max, np.max(spatial_response_gt))
-                """
-                start = round(plt_range[0] * (spatial_response_prediction.shape[0] + n_temporal_in))
-                end = round(plt_range[1] * (spatial_response_prediction.shape[0] + n_temporal_in))
-                val_indices = np.arange(start, end) - n_temporal_in
-                loc_indices = np.arange(val_indices.shape[0]) + max(n_temporal_in-start, 0)
-                prediction_interval_markers = np.arange(loc_indices[0], loc_indices[-1]+1+1, n_temporal_out)
-                # Add at most 50 output markers so its not too crowded
-                max_prediction_interval_markers = 50
-                if prediction_interval_markers.shape[0] <= max_prediction_interval_markers and "prediction intervals" in options:
-                    for i in range(prediction_interval_markers.shape[0]-1):
-                        plt.axvline(prediction_interval_markers[i], color="k", linestyle="--", linewidth=self.line_width)
-                    i = prediction_interval_markers.shape[0] - 1
-                    plt.axvline(prediction_interval_markers[i], color="k", linestyle="--", label="Inference Interval Markers", linewidth=self.line_width)
-                """
+                y_min = min(y_min, np.min(Yhat[:,s,o]))
+                y_max = max(y_max, np.max(Yhat[:,s,o]))
+                y_min = min(y_min, np.min(Y[:,s,o]))
+                y_max = max(y_max, np.max(Y[:,s,o]))
                 n_spa_plotted += 1
                 if (n_spa_per_plt > 0 and n_spa_plotted % n_spa_per_plt == 0) or (n_spa_per_plt < 0 and n_spa_plotted == len(spatial_labels)):
-                    plt.ylabel(self.feature_ylabel_map[response_features[o]], fontsize=8)
-                    self._plot_xticks(temporal_labels, plt_range)
-                    self._plot_yticks([y_min, y_max])
-                    self._plot_xylim([0, temporal_labels.shape[0]], [y_min, y_max], plt_range)
-                    self._plot_legend()
-                    self._savefigs(partition, spatial_labels[s:s+1], response_features[o], options, plt_range, plt_dir)
+                    if "xlabel" in fig_opts:
+                        plt.xlabel("Time", fontsize=8)
+                    if "ylabel" in fig_opts:
+                        plt.ylabel(self.feature_ylabel_map[response_features[o]], fontsize=8)
+                    if "xticks" in fig_opts:
+                        self._plot_xticks(temporal_labels, plt_range)
+                    if "yticks" in fig_opts:
+                        self._plot_yticks([y_min, y_max])
+                    if "lims" in fig_opts:
+                        self._plot_xylim([0, temporal_labels.shape[0]], [y_min, y_max], plt_range)
+                    if "legend" in fig_opts:
+                        self._plot_legend()
+                    if "save" in fig_opts:
+                        self._savefigs(
+                            partition, 
+                            spatial_labels[s:s+1], 
+                            response_features[o], 
+                            line_opts, 
+                            plt_range, 
+                            plt_dir
+                        )
                     y_min, y_max = sys.float_info.max, sys.float_info.min
-            # Save all the data so we can reproduce the plots later
-            if cache_plot_data:
-                filename = "EventData_Partition[%s]_Subbasins[%s]_Response[%s].pkl" % (partition, ",".join(spatial_labels), ",".join(response_features))
-                path = plt_dir + os.sep + filename
-                util.to_cache(event_data, path)
-                filename = "Evaluation_Partition[%s]_Subbasins[%s]_Response[%s]_Datatype[%s].pkl" % (partition, ",".join(spatial_labels), response_features[o], "Groundtruth")
-                path = plt_dir + os.sep + filename
-                util.to_cache(gt, path)
-                filename = "Evaluation_Partition[%s]_Subbasins[%s]_Response[%s]_Datatype[%s].pkl" % (partition, ",".join(spatial_labels), response_features[o], "Prediction")
-                path = plt_dir + os.sep + filename
-                util.to_cache(prediction, path)
-                prediction_interval_markers = np.arange(prediction.shape[0]+1) * n_temporal_out + n_temporal_in
-                filename = "Evaluation_Partition[%s]_Datatype[%s]_Range[%.3f,%.3f].pkl" % (partition, "InferenceIntervalMarkers", plt_range[0], plt_range[1])
-                path = plt_dir + os.sep + filename
-                util.to_cache(prediction_interval_markers, path)
 
 
-    def _plot_groundtruth(self, gt, dataset, n_spa, spa_label, n_spa_per_plt, color):
+    def _plot_groundtruth(self, Y, dataset, n_spa, spa_label, n_spa_per_plt, color):
         label = self.dataset_legend_map[dataset]
         if n_spa > 1 and n_spa_per_plt > 1:
             label = ("Subbasin %s " % (str(spa_label))) + label
-        plt.plot(gt, color=color, linestyle="-", label=label, linewidth=self.gt_line_width)
+        plt.plot(Y, color=color, linestyle="-", label=label, linewidth=self.gt_line_width)
 
 
-    def _plot_prediction(self, pred, n_tmp_in, n_tmp_out, n_spa, spa_label, n_spa_per_plt, color):
-        label = "Prediction"
+    def _plot_prediction(self, Yhat, n_tmp_in, n_tmp_out, n_spa, spa_label, n_spa_per_plt, color, label):
         if n_spa > 1 and n_spa_per_plt > 1:
             label = ("Subbasin %s " % (str(spa_label))) + label
-        indices = np.arange(n_tmp_in, n_tmp_in + pred.shape[0])
-        plt.plot(indices, pred, color=color, linestyle="-", label=label, linewidth=self.pred_line_width)
+        indices = np.arange(n_tmp_in, n_tmp_in + Yhat.shape[0])
+        plt.plot(indices, Yhat, color=color, linestyle="-", label=label, linewidth=self.pred_line_width)
 
 
-    def _plot_groundtruth_extremes(self, gt, means, stddevs, dataset, n_spa, spa_label, n_spa_per_plt, plt_range):
-        interval_events_map = util.compute_events(gt, means, stddevs)
+    def _plot_groundtruth_extremes(self, Y, means, stddevs, dataset, n_spa, spa_label, n_spa_per_plt, plt_range):
+        interval_events_map = util.compute_events(Y, means, stddevs)
         interval_label_map = {
             "-8,-2": "Extremely Dry",
             "-2,-1.5": "Severely Dry",
@@ -1368,11 +1020,19 @@ class Plotting(Container):
                 label = "%s %s" % (self.dataset_legend_map[dataset], interval_label_map[interval])
                 if n_spa > 1 and n_spa_per_plt > 1:
                     label = ("Subbasin %s " % (spa_label)) + label
-                plt.plot(events, color=color, linestyle="-", marker=marker, label=label, linewidth=2*lw, markersize=0.75*self.marker_size)
+                plt.plot(
+                    events, 
+                    color=color, 
+                    linestyle="-", 
+                    marker=marker, 
+                    label=label, 
+                    linewidth=2*lw, 
+                    markersize=0.75*self.marker_size
+                )
 
 
-    def _plot_prediction_extremes(self, pred, means, stddevs, n_tmp_in, n_tmp_out, n_spa, spa_label, n_spa_per_plt, plt_range):
-        interval_events_map = util.compute_events(pred, means, stddevs)
+    def _plot_prediction_extremes(self, Yhat, means, stddevs, n_tmp_in, n_tmp_out, n_spa, spa_label, n_spa_per_plt, plt_range):
+        interval_events_map = util.compute_events(Yhat, means, stddevs)
         interval_label_map = {
             "-8,-2": "Extremely Dry",
             "-2,-1.5": "Severely Dry",
@@ -1396,11 +1056,20 @@ class Plotting(Container):
                 if n_spa > 1 and n_spa_per_plt > 1:
                     label = ("Subbasin %s " % (spa_label)) + label
                 indices = np.arange(n_tmp_in, n_tmp_in + events.shape[0])
-                plt.plot(indices, events, color=color, linestyle="-", marker=marker, label=label, linewidth=2*lw, markersize=0.75*self.marker_size)
+                plt.plot(
+                    indices, 
+                    events, 
+                    color=color, 
+                    linestyle="-", 
+                    marker=marker, 
+                    label=label, 
+                    linewidth=2*lw, 
+                    markersize=0.75*self.marker_size
+                )
 
 
-    def _plot_zscore_confusion(self, preds, gts, means, stddevs):
-        confusion = util.compute_zscore_confusion(preds, gts, means, stddevs, normalize=False)
+    def _plot_zscore_confusion(self, Yhat, Y, means, stddevs):
+        confusion = util.compute_zscore_confusion(Yhat, Y, means, stddevs, normalize=False)
         print(confusion)
         interval_labels = [
             "Extremely Dry", 
@@ -1413,9 +1082,6 @@ class Plotting(Container):
         ]
         df = pd.DataFrame(confusion, index=interval_labels, columns=interval_labels)
         from confusion_matrix_pretty_print import pretty_plot_confusion_matrix
-        """
-        sns.heatmap(df, annot=True, fmt=".1%", cmap="Blues", cbar=False)
-        """
         pretty_plot_confusion_matrix(df, cmap="Blues", pred_val_axis="col")
         self.labels("Predicted Class", "Actual Class")
         self.ticks(xtick_kwargs={"rotation": 45, "fontsize": 7}, ytick_kwargs={"fontsize": 7})
@@ -1472,18 +1138,20 @@ class Plotting(Container):
         plt.yticks(fontsize=7)
 
 
-    def _savefigs(self, partition, spatial_labels, feature, options, plt_range, plt_dir):
+    def _savefigs(self, partition, spatial_labels, feature, line_opts, plt_range, plt_dir):
         spatials = ",".join(map(str, spatial_labels))
-        opts = list(options)
+        opts = list(line_opts)
         if "confusion" in opts:
             opts.remove("confusion")
-        filename = "Evaluation_Partition[%s]_Subbasins[%s]_Response[%s]_Options[%s]_Range[%.3f,%.3f].png" % (
-            partition, spatials, feature, ",".join(opts), plt_range[0], plt_range[1])
-        path = plt_dir + os.sep + filename
-        plt.savefig(path, bbox_inches="tight", dpi=200)
-        filename = "Evaluation_Partition[%s]_Subbasins[%s]_Response[%s]_Options[%s]_Range[%.3f,%.3f].pdf" % (
-            partition, spatials, feature, ",".join(opts), plt_range[0], plt_range[1])
-        path = plt_dir + os.sep + filename
+        fname = "Evaluation_Partition[%s]_Subbasins[%s]_Response[%s]_Options[%s].png" % (
+            partition, spatials, feature, ",".join(opts)
+        )
+        path = os.sep.join([plt_dir, fname])
+        plt.savefig(path, bbox_inches="tight")
+        fname = "Evaluation_Partition[%s]_Subbasins[%s]_Response[%s]_Options[%s].pdf" % (
+            partition, spatials, feature, ",".join(opts)
+        )
+        path = os.sep.join([plt_dir, fname])
 #        plt.savefig(path, bbox_inches="tight", dpi=200)
         plt.close()
 
@@ -1506,10 +1174,15 @@ def plot_wabash():
     fnames.remove("riv1")
     fnames.remove("outlets1")
     fnames.remove("monitoring_points1")
-    fname_path_map = {fname: "Data\\WabashRiverWatershedShapes\\"+fname+".shp" for fname in fnames}
+    fname_path_map = {
+        fname: os.sep.join(["Data", "LittleRiverWatershedShapes", fname+".shp"]) for fname in fnames
+    }
     fname_item_map = {"riv1": "rivers", "subs1": "subbasins"}
     item_shapes_map = {fname_item_map[fname]: shapefile.Reader(path) for fname, path in fname_path_map.items()}
-    path = "Plots\\Watershed_Components[%s]_Watershed[%s].png" % (",".join(item_shapes_map.keys()), watershed)
+    path = os.sep.join(["Plots", "Watershed_Components[%s]_Watershed[%s].png"]) % (
+        ",".join(item_shapes_map.keys()), 
+        watershed
+    )
     plt.plot_watershed(item_shapes_map, subbasin_river_map, path, highlight=False, watershed=watershed, river_opts={"color_code": False, "name": False})
 
 
@@ -1519,13 +1192,98 @@ def plot_little():
     subbasin_river_map = {}
     fnames = ["basins", "gis_streams"]
 #    fnames.remove("gis_streams")
-    fname_path_map = {fname: "Data\\LittleRiverWatershedShapes\\"+fname+".shp" for fname in fnames}
+    fname_path_map = {
+        fname: os.sep.join(["Data", "LittleRiverWatershedShapes", fname+".shp"]) for fname in fnames
+    }
     fname_item_map = {"gis_streams": "rivers", "basins": "subbasins"}
     item_shapes_map = {fname_item_map[fname]: shapefile.Reader(path) for fname, path in fname_path_map.items()}
-    path = "Plots\\Watershed_Components[%s]_Watershed[%s].png" % (",".join(item_shapes_map.keys()), watershed)
+    path = os.sep.join(["Plots", "Watershed_Components[%s]_Watershed[%s].png"]) % (
+        ",".join(item_shapes_map.keys()), 
+        watershed
+    )
     plt.plot_watershed(item_shapes_map, subbasin_river_map, path, highlight=False, watershed=watershed)
 
 
-if len(sys.argv) > 1 and sys.argv[0] == "Plotting.py" and sys.argv[1] == "test":
-    plot_wabash()
+def plot_error_scatter(error_path_i, error_path_j, data):
+    import Gather
+    graph = data.train__dataset.graph.original
+    err_con_i = Gather.get_report_errors(error_path_i)
+    err_con_j = Gather.get_report_errors(error_path_j)
+    label_i = "-".join(error_path_i.split(os.sep)[-3:-2])
+    label_j = "-".join(error_path_j.split(os.sep)[-3:-2])
+    spatial_err_map_i = err_con_i.get("NRMSE", "test").get("FLOW_OUTcms")
+    spatial_err_map_j = err_con_j.get("NRMSE", "test").get("FLOW_OUTcms")
+    spatial_labels_i, errors_i = list(spatial_err_map_i.keys()), np.array(list(spatial_err_map_i.values()))
+    spatial_labels_j, errors_j = list(spatial_err_map_j.keys()), np.array(list(spatial_err_map_j.values()))
+    spatial_indices_i = data.indices_from_selection(graph.node_labels, ["literal"]+spatial_labels_i)
+    org_node_indegree_map = graph.node_indegree_map
+    node_indegree_map = {}
+    for label in spatial_labels_i:
+        node_indegree_map[label] = org_node_indegree_map[label]
+    node_indegree_map = {}
+    for label, idx in zip(spatial_labels_i, spatial_indices_i):
+        node_indegree_map[label] = np.sum(graph.adjacency[spatial_indices_i,idx])
+    error_difs = errors_j - errors_i
+    indegrees = util.get_dict_values(node_indegree_map, spatial_labels_i)
+    plt.figure(figsize=(10, 10))
+    print("No. Nodes =", len(spatial_labels_i))
+    if 1:
+        x, y = indegrees, error_difs
+        plt.scatter(x, y, 75, color="b", label=label_j)
+        z = np.polyfit(x, y, 1)
+        p = np.poly1d(z)
+        plt.plot(x, p(x), "k--", linewidth=0.75)
+        plt.axhline(0.0, color="r")
+        for _x, _y, _s in zip(x, y, spatial_labels_i):
+            plt.text(_x, _y, _s, color="w", va="center", ha="center", fontsize=5)
+        plt.xlim(-0.25, max(indegrees)+0.25)
+        plt.xlabel("Node In-Degree")
+        plt.ylabel("$\Delta$ NRMSE (%s - %s)" % (label_j, label_i))
+    if 0:
+        x, y = indegrees, errors_i
+#       y, x = indegrees, errors_i
+        plt.scatter(x, y, color="r", label=label_i)
+        x, y = indegrees, errors_j
+#       y, x = indegrees, errors_j
+        plt.scatter(x, y, color="b", label=label_j)
+        plt.xlim(-0.25, max(indegrees)+0.25)
+        plt.xlabel("Node In-Degree")
+        plt.ylabel("NRMSE")
+        plt.legend()
+
+
+def plot_error_scatters(model_dir_i, model_dir_j):
+    import matplotlib as mpl
+    mpl.style.use('classic')
+    import glob
+    from Variables import Variables
+    from Data.Data import Data
+    var = Variables()
+    var.get("execution").set("dataset", "wabashriver_swat", "*")
+    data = Data(Variables())
+    out_dir = os.sep.join([model_dir_j, "ComparisonScatterPlots"])
+    os.makedirs(out_dir, exist_ok=True)
+    paths = glob.glob(os.sep.join([model_dir_i, "*", "Graph_River*.png"]))
+    if len(paths) > 0:
+        paths.sort(key=os.path.getctime)
+        names = [path.split(os.sep)[-1].replace("Graph_River[", "").replace("].png", "") for path in paths]
+    else:
+        paths = glob.glob(os.sep.join([model_dir_i, "*"+os.sep]))
+        paths.sort(key=os.path.getctime)
+        names = [path.split(os.sep)[-2] for path in paths]
+    paths_i = glob.glob(os.sep.join([model_dir_i, "*", "*Errors.txt"]))
+    paths_i.sort(key=os.path.getctime)
+    paths_j = glob.glob(os.sep.join([model_dir_j, "*", "*Errors.txt"]))
+    paths_j.sort(key=os.path.getctime)
+    for path_i, path_j, name in zip(paths_i, paths_j, names):
+        print(name.capitalize())
+        plot_error_scatter(path_i, path_j, data)
+        path = os.sep.join([out_dir, name+".png"])
+        plt.savefig(path, bbox_inches="tight", dpi=200)
+        plt.close()
+
+
+if __name__ == "__main__":
+#    plot_wabash()
 #    plot_little()
+    plot_error_scatters(sys.argv[1], sys.argv[2])
