@@ -1081,8 +1081,8 @@ class Plotting(Container):
             "Extremely Wet"
         ]
         df = pd.DataFrame(confusion, index=interval_labels, columns=interval_labels)
-        from confusion_matrix_pretty_print import pretty_plot_confusion_matrix
-        pretty_plot_confusion_matrix(df, cmap="Blues", pred_val_axis="col")
+        from pretty_confusion_matrix import pp_matrix
+        pp_matrix(df, cmap="Blues", pred_val_axis="col")
         self.labels("Predicted Class", "Actual Class")
         self.ticks(xtick_kwargs={"rotation": 45, "fontsize": 7}, ytick_kwargs={"fontsize": 7})
 
@@ -1284,6 +1284,4 @@ def plot_error_scatters(model_dir_i, model_dir_j):
 
 
 if __name__ == "__main__":
-#    plot_wabash()
-#    plot_little()
-    plot_error_scatters(sys.argv[1], sys.argv[2])
+    pass
