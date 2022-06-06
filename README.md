@@ -3,7 +3,7 @@
 ## Contact: nmajeske@iu.edu
 
 ## Requirements
-Required packages are defined for users of either Anaconda or pip in environment.yml and requirements.txt respectively. Users may issue one of the following commands to install all dependencies for HydroLearn:
+Required packages are provided for conda environment setup or pip installation in environment.yml and requirements.txt respectively. Users may issue one of the following commands to install all dependencies for HydroLearn:
 ```bash
 conda env create --file environment.yml
 pip install -r requirements.txt
