@@ -4,10 +4,10 @@ import sys
 import re
 import seaborn as sns
 import pandas as pd
+import geopandas as gpd
 import numpy as np
-from progressbar import ProgressBar
 import shapefile
-import NetworkProperties as netprop
+#import NetworkProperties as netprop
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FormatStrFormatter, MaxNLocator
 from matplotlib.patches import Polygon
@@ -45,7 +45,14 @@ class PolygonN(object):
 
 class Plotting(Container):
 
-    debug = False
+    debug = 0
+    default_colors = np.array(plt.rcParams["axes.prop_cycle"].by_key()["color"])
+#    defaults = {
+#        "bar.width": 0.8, 
+#        "bar.bottom": 0.0, 
+#        "bar.align": "center", 
+#        "color.cycle": plt.rcParams["axes.prop_cycle"].by_key()["color"], 
+#    }
     line_width = 1
     gt_line_width = 1.25 * line_width
     pred_line_width = 0.75 * line_width
@@ -53,32 +60,36 @@ class Plotting(Container):
     month_labels = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "January"]
     feature_idx_map = {"FLOW_OUTcms": 3, "SWmm": 10, "PRECIPmm": 7}
     feature_fullname_map = {
-        "FLOW_OUTcms": "Streamflow", 
-        "SWmm": "Soil Moisture", 
-        "PRECIPmm": "Precipitation", 
-        "tmin": "Minimum Temperature", 
-        "tmax": "Maximum Temperature", 
-        "speed_mph": "Vehicle Speed", 
-        "occupancy": "Road Occupancy", 
-        "power_MW": "Power", 
-        "power_kWh": "Power", 
-        "exchange_rate": "Exchange Rate", 
-        "signal_mV": "Signal", 
-        "confirmed": "Confirmed Cases", 
-        "Avg_Speed": "Average Speed", 
+        "FLOW_OUTcms": "Streamflow",
+        "dv_va": "Streamflow",
+        "SWmm": "Soil Moisture",
+        "PRECIPmm": "Precipitation",
+        "tmin": "Minimum Temperature",
+        "tmax": "Maximum Temperature",
+        "speedmph": "Vehicle Speed",
+        "occupancy": "Road Occupancy",
+        "power_MW": "Power",
+        "power_kWh": "Power",
+        "exchange_rate": "Exchange Rate",
+        "signal_mV": "Signal",
+        "confirmed": "Confirmed Cases",
+        "Avg_Speed": "Average Speed",
+        "return_air_humidity": "Return Air Humidity", 
     }
     feature_SIunit_map = {
-        "FLOW_OUTcms": "$m^{3}/s$", 
-        "SWmm": "$mm$", 
-        "PRECIPmm": "$mm$", 
-        "tmin": "$\degree C$", 
-        "tmax": "$\degree C$", 
-        "speed_mph": "$mph$", 
-        "occupancy": "$\%$", 
-        "power_MW": "$MW$", 
-        "power_kWh": "$kWh$", 
-        "signal_mV": "$mV$", 
-        "Avg_Speed": "$mph$", 
+        "FLOW_OUTcms": "$m^{3}/s$",
+        "dv_va": "$ft^{3}/s$", 
+        "SWmm": "$mm$",
+        "PRECIPmm": "$mm$",
+        "tmin": "$\degree C$",
+        "tmax": "$\degree C$",
+        "speedmph": "$mph$",
+        "occupancy": "$\%$",
+        "power_MW": "$MW$",
+        "power_kWh": "$kWh$",
+        "signal_mV": "$mV$",
+        "Avg_Speed": "$mph$",
+        "return_air_humidity": "?", 
     }
     feature_ylabel_map = {}
     for feature in feature_fullname_map.keys():
@@ -86,53 +97,78 @@ class Plotting(Container):
         if feature in feature_SIunit_map:
             feature_ylabel_map[feature] += " (%s)" % (feature_SIunit_map[feature])
     dataset_legend_map = {
-        "littleriver_observed": "Little", 
-        "wabashriver_swat": "Wabash(SWAT)", 
-        "wabashriver_observed": "Wabash(GT)", 
-        "los-loop_observed": "Los-Loop", 
-        "sz-taxi_observed": "SX-Taxi", 
-        "metr-la": "METR-LA", 
-        "pems-bay": "PEMS-BAY", 
-        "traffic": "Traffic", 
-        "solar-energy": "Solar-Energy", 
-        "electricity": "Electricity", 
-        "exchange-rate": "Exchange Rate", 
-        "ecg5000_observed": "ECG5000", 
-        "covid-19_observed": "COVID-19", 
-        "caltranspems_d05": "Caltrans PeMS District 5", 
+        "littleriver_observed": "Little",
+        "wabashriver_swat": "Wabash(SWAT)",
+        "wabashriver_observed": "Wabash(GT)",
+        "los-loop_observed": "Los-Loop",
+        "sz-taxi_observed": "SX-Taxi",
+        "metr-la": "METR-LA",
+        "_metr-la": "_METR-LA",
+        "new-metr-la": "NEW_METR-LA",
+        "pems-bay": "PEMS-BAY",
+        "_pems-bay": "_PEMS-BAY",
+        "new-pems-bay": "NEW_PEMS-BAY",
+        "traffic": "Traffic",
+        "solar-energy": "Solar-Energy",
+        "electricity": "Electricity",
+        "exchange-rate": "Exchange Rate",
+        "ecg5000_observed": "ECG5000",
+        "covid-19_observed": "COVID-19",
+        "caltranspems_d05": "Caltrans PeMS District 5",
+        "us-streams": "US National Streams", 
+        "us-streams-al": "Alaska", 
+        "power": "HVAC", 
     }
     partition_fullname_map = {"train": "Training", "valid": "Validation", "test": "Testing"}
     partition_codename_map = {"train": "Train", "valid": "Valid", "test": "Test"}
     feature_plot_order_map = {
-        "FLOW_OUTcms": "descending", 
-        "SWmm": "descending", 
-        "speed_mph": "descending", 
-        "occupancy": "descending", 
-        "power_MW": "descending", 
-        "power_kWh": "descending", 
-        "exchange_rate": "descending", 
-        "signal_mV": "descending", 
-        "confirmed": "descending", 
-        "Avg_Speed": "descending", 
+        "FLOW_OUTcms": "descending",
+        "dv_va": "descending",
+        "SWmm": "descending",
+        "speedmph": "descending",
+        "occupancy": "descending",
+        "power_MW": "descending",
+        "power_kWh": "descending",
+        "exchange_rate": "descending",
+        "signal_mV": "descending",
+        "confirmed": "descending",
+        "Avg_Speed": "descending",
+        "return_air_humidity": "descending", 
     }
 
     def __init__(self):
-        plt.rcParams.update(plt.rcParamsDefault)
         self.set("plot_dir", "Plots")
         self.set("lines", [])
+        plt.rcdefaults()
+        self.defaults = Container()
+        for key, value in plt.rcParams.items():
+            fields = key.split(".")
+            if len(fields) > 1:
+                self.defaults.set(fields[-1], value, path=fields[:-1])
+            else:
+                self.defaults.set(fields[-1], value)
+        self.defaults.bars = Container().set(
+            ["width", "bottom", "align"],
+            [0.8, 0, "center"],
+            multi_value=True
+        )
+
 
     def plot_networkx_graph(
-        self, 
-        G, 
-        node_positions=None, 
-        node_sizes=None, 
-        node_list="all", 
-        edge_list="all", 
-        alpha=1.0, 
-        node_kwargs={}, 
-        edge_kwargs={}, 
-        label_kwargs={}, 
-        ax=None, 
+        self,
+        G,
+        node_positions=None,
+        node_sizes=None,
+        node_list="all",
+        edge_list="all",
+        node_alpha=1.0,
+        edge_alpha=1.0,
+        node_kwargs={},
+        edge_kwargs={},
+        label_kwargs={},
+        plot_edges=True, 
+        plot_labels=True, 
+        ax=None,
     ):
         # Get node and edge sets to be plotted
         if isinstance(node_list, str) and node_list == "all":
@@ -150,28 +186,55 @@ class Plotting(Container):
         elif not isinstance(node_positions, dict):
             node_positions = util.to_dict(node_list, node_positions)
         if node_sizes is None:
-            node_sizes = np.ones((n_nodes,))
+            node_sizes = 300
         elif isinstance(node_sizes, dict):
             node_sizes = util.get_dict_values(node_sizes, node_list)
-        node_sizes = 750 * node_sizes# / max(node_sizes)
         if 0:
             for node, pos in node_positions.items():
                 print(node, pos)
             for node, size in zip(G.nodes(), node_sizes):
                 print(node, size)
         # Plot it
-        node_kwargs = util.merge_dicts({"alpha": 0.5*alpha}, node_kwargs)
-        edge_kwargs = util.merge_dicts({"alpha": alpha, "node_size": 1/4, "arrows": True}, edge_kwargs)
-        label_kwargs = util.merge_dicts({"alpha": alpha, "font_size": 5, "font_color": "r"}, label_kwargs)
+        node_kwargs = util.merge_dicts({"alpha": 3/4*node_alpha}, node_kwargs)
+        edge_kwargs = util.merge_dicts({"alpha": edge_alpha, "node_size": 1/4, "arrows": True}, edge_kwargs)
+        label_kwargs = util.merge_dicts({"alpha": node_alpha, "font_size": 5, "font_color": "r"}, label_kwargs)
         if ax is None:
             nx.draw_networkx_nodes(G, node_positions, nodelist=node_list, node_size=node_sizes, **node_kwargs)
-            nx.draw_networkx_edges(G, node_positions, edgelist=edge_list, **edge_kwargs)
-            nx.draw_networkx_labels(G, node_positions, **label_kwargs)
+            if plot_edges:
+                nx.draw_networkx_edges(G, node_positions, edgelist=edge_list, **edge_kwargs)
+            if plot_labels:
+                nx.draw_networkx_labels(G, node_positions, **label_kwargs)
         else:
             nx.draw_networkx_nodes(G, node_positions, nodelist=node_list, node_size=node_sizes, ax=ax, **node_kwargs)
-            nx.draw_networkx_edges(G, node_positions, edgelist=edge_list, ax=ax, **edge_kwargs)
-            nx.draw_networkx_labels(G, node_positions, ax=ax, **label_kwargs)
+            if plot_edges:
+                nx.draw_networkx_edges(G, node_positions, edgelist=edge_list, ax=ax, **edge_kwargs)
+            if plot_labels:
+                nx.draw_networkx_labels(G, node_positions, ax=ax, **label_kwargs)
 #        plt.axis("off")
+
+    def plot_shapes(self, shapes, ax=None, filled=False, **kwargs):
+        from shapely.geometry import Point, Polygon, MultiPolygon
+        if isinstance(shapes, str):
+            shapes = gpd.read_file(shapes)
+        elif not isinstance(shapes, gpd.GeoDataFrame):
+            raise ValueError("Input \"shapes\" may be str or geopandas.GeoDataFrame. Received %s" % (type(shapes)))
+        shapes = shapes.to_crs("epsg:4326")
+        polys = []
+        for i in range(len(shapes)):
+            poly = shapes.loc[i,:].geometry
+            if isinstance(poly, Polygon):
+                polys.append(np.array(poly.exterior.coords.xy))
+            elif isinstance(poly, MultiPolygon):
+                polys += [np.array(_poly.exterior.coords.xy) for _poly in poly.geoms]
+            else:
+                raise NotImplementedError("Unknown geometry type %s" % (type(poly)))
+        if ax is None:
+            ax = plt.gca()
+        for i, poly in enumerate(polys):
+            if filled:
+                ax.add_patch(plt.Polygon(poly.T, **kwargs))
+            else:
+                self.plot_line(poly[0,:], poly[1,:], ax=ax, **kwargs)
 
     def plot_watershed(self, item_shapes_map, subbasin_river_map, path, highlight=True, watershed="", river_opts={"color_code": True, "name": True}):
         cache_path = "Data" + os.sep + "SubbasinLabelCoordinateMap_Watershed[%s].pkl" % (watershed)
@@ -379,8 +442,12 @@ class Plotting(Container):
         plt.savefig(path, bbox_inches="tight", dpi=dpi)
         plt.close()
 
-    def plot_cluster_heatmap(self, mat, xtick_labels=[], ytick_labels=[], x_label="", y_label="", plot_numbers=True, transpose=True, size=(12, 12), path=None):
+    def plot_cluster_heatmap(self, mat, xtick_labels=[], ytick_labels=[], xlabel="", ylabel="", plot_numbers=True, transpose=False, size=(12, 12), rowcol_cluster=[True, True], ax=None):
         data = {}
+        if xtick_labels == []:
+            xtick_labels = list(range(mat.shape[1]))
+        if ytick_labels == []:
+            ytick_labels = list(range(mat.shape[0]))
         if transpose:
             for i in range(mat.shape[0]):
                 data[ytick_labels[i]] = mat[i,:]
@@ -392,58 +459,53 @@ class Plotting(Container):
             data.index = xtick_labels
         else:
             data.index = ytick_labels
-        rowcol_cluster = [True, True]
         cg = sns.clustermap(data, method="average", metric="correlation", figsize=size, annot=plot_numbers, annot_kws={"fontsize": 0.7*size[0]}, row_cluster=rowcol_cluster[0], col_cluster=rowcol_cluster[1])
         plt.setp(cg.ax_heatmap.xaxis.get_majorticklabels(), rotation=0)
         plt.setp(cg.ax_heatmap.yaxis.get_majorticklabels(), rotation=0)
         if transpose:
-            cg.ax_heatmap.set_xlabel(y_label, fontsize=1.5*size[0])
-            cg.ax_heatmap.set_ylabel(x_label, fontsize=1.5*size[0])
+            cg.ax_heatmap.set_xlabel(ylabel, fontsize=1.5*size[0])
+            cg.ax_heatmap.set_ylabel(xlabel, fontsize=1.5*size[0])
         else:
-            cg.ax_heatmap.set_xlabel(x_label, fontsize=1.5*size[0])
-            cg.ax_heatmap.set_ylabel(y_label, fontsize=1.5*size[0])
-        if path is None:
-            plt.show()
-        else:
-            plt.savefig(path, bbox_inches="tight")
-        plt.close()
+            cg.ax_heatmap.set_xlabel(xlabel, fontsize=1.5*size[0])
+            cg.ax_heatmap.set_ylabel(ylabel, fontsize=1.5*size[0])
+        return ax
 
-    def plot_heatmap(self, mat, xtick_labels=[], ytick_labels=[], x_label="", y_label="", cbar_label="", plot_numbers=True, transpose=True, size=(12, 12), path=None):
-        ma = (np.transpose(mat) if transpose else mat)
-        plt.figure(figsize=size)
+    def plot_heatmap(self, mat, xtick_locs=None, xtick_labels=[], ytick_locs=None, ytick_labels=[], xlabel="", ylabel="", cbar_label="", cmap="viridis", plot_cbar=True, plot_numbers=False, transpose=False, ax=None):
+        if ax is None:
+            ax = plt.gca()
         if transpose:
-            tmp = xtick_labels
-            xtick_labels = ytick_labels
-            ytick_labels = tmp
-            tmp = x_label
-            x_label = y_label
-            y_label = tmp
-        plt.xlabel(x_label, fontsize=1.5*size[0])
-        plt.ylabel(y_label, fontsize=1.5*size[0])
-        plt.xticks(np.arange(len(xtick_labels)), xtick_labels, rotation=0, fontsize=0.9*size[0])
-        plt.yticks(np.flip(np.arange(len(ytick_labels))), ytick_labels, rotation=0, fontsize=0.9*size[0])
+            mat = np.transpose(mat)
+            xtick_labels, ytick_labels = ytick_labels, xtick_labels
+            xlabel, ylabel = ylabel, xlabel
+        size = (mat.shape[1], mat.shape[0])
         if plot_numbers:
-            for i in range(ma.shape[0]):
-                for j in range(ma.shape[1]):
+            for i in range(mat.shape[0]):
+                for j in range(mat.shape[1]):
                     plt.text(
-                        j, 
-                        mat.shape[0]-1-i, 
-                        "%.4f" % (mat[i,j]), 
-                        ha="center", 
-                        va="center", 
-                        fontsize=0.7*size[0]
+                        j,
+                        mat.shape[0]-1-i,
+                        "%.4f" % (mat[i,j]),
+                        ha="center",
+                        va="center",
+                        fontsize=0.5*size[0]
                     )
-        ax = plt.gca()
-        im = plt.imshow(ma, extent=[-0.5, ma.shape[1]-0.5, -0.5, ma.shape[0]-0.5])
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-        cbar = plt.colorbar(im, cax=cax)
-        cbar.ax.set_ylabel(cbar_label, rotation=-90, va="bottom", fontsize=1.5*size[1])
-        if path is None:
-            plt.show()
+        im = ax.imshow(mat, cmap=cmap, extent=[-0.5, mat.shape[1]-0.5, -0.5, mat.shape[0]-0.5])
+        if plot_cbar:
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            cbar = plt.colorbar(im, cax=cax)
+            cbar.ax.set_ylabel(cbar_label, rotation=-90, va="bottom", fontsize=16)
+        if ytick_locs is None:
+            ytick_locs = np.flip(np.arange(len(ytick_labels)))
+        if 1:
+            self.xticks(xtick_locs, xtick_labels, ax=ax, rotation=90)
+            self.yticks(ytick_locs, ytick_labels, ax=ax)
         else:
-            plt.savefig(path, bbox_inches="tight")
-        plt.close()
+            self.xticks(xtick_locs, xtick_labels, ax=ax, fontsize=0.75*size[0], rotation=90)
+            self.yticks(ytick_locs, ytick_labels, ax=ax, fontsize=0.75*size[1])
+        self.xlabel(xlabel, ax=ax, fontsize=16)
+        self.ylabel(ylabel, ax=ax, fontsize=16)
+        return ax
 
     def plot_graph_distributions(self, G, distributions, graph_name, plot_dir="Plots"):
         # Degrees
@@ -513,7 +575,7 @@ class Plotting(Container):
                 intAxis=True
             )
 
-    
+
     def plot_distribution(self, data, path="", xlabel="", ylabel="", title="", xlog = True, ylog= True, showLine=False, intAxis=False) :
         counts = {}
         for item in data :
@@ -546,32 +608,7 @@ class Plotting(Container):
             fig.show()
         plt.close()
 
-    def plot_line(self, x, y, line_kwargs={}):
-        plt.plot(x, y, **line_kwargs)
-
-    def plot_scatter(self, x, y, labels=None, scatter_kwargs={}, label_kwargs={}):
-        scatter_kwargs = util.merge_dicts(
-            {"s": 75, "c": "k"}, 
-            scatter_kwargs
-        )
-        label_kwargs = util.merge_dicts(
-            {"color": "w", "va": "center", "ha": "center", "fontsize": 5}, 
-            label_kwargs
-        )
-#        z = np.polyfit(x, y, 1)
-#        p = np.poly1d(z)
-#        plt.plot(x, p(x), "k--", linewidth=0.75)
-#        plt.axhline(0.0, color="r")
-        if not labels is None:
-#            print(x)
-#            print(y)
-#            print(labels)
-            for _x, _y, _label in zip(x, y, labels):
-#                print(_x, _y, _label)
-                plt.text(_x, _y, _label, **label_kwargs)
-        plt.scatter(x, y, **scatter_kwargs)
-    
-    # Purpose: 
+    # Purpose:
     #   Plot the probability density function for given data
     # Notes:
     #   If receiving "underflow encountered in exp" error, increase/decrease bandwidth/n_bins value
@@ -598,10 +635,10 @@ class Plotting(Container):
 #        pdf = pdf / np.sum(pdf)
         label = "$%s$" % (source.replace(" ", " \\ "))
         lines = plt.plot(
-            new_xs, 
-            new_ys, 
-            label=label, 
-            **line_kwargs, 
+            new_xs,
+            new_ys,
+            label=label,
+            **line_kwargs,
         )
         self.set("lines", self.get("lines") + lines)
         if fill:
@@ -630,12 +667,12 @@ class Plotting(Container):
             label = "$\mu \pm \sigma$"
             if source in self.partition_codename_map:
                 label = "$\mu_{%s} \pm \sigma_{%s}$" % (
-                    self.partition_codename_map[source].replace(" ", " \\ "), 
+                    self.partition_codename_map[source].replace(" ", " \\ "),
                     self.partition_codename_map[source].replace(" ", " \\ ")
                 )
             elif source != "":
                 label = "$\mu_{%s} \pm \sigma_{%s}$" % (
-                    source.replace(" ", " \\ "), 
+                    source.replace(" ", " \\ "),
                     source.replace(" ", " \\ ")
                 )
                 label = "$\sigma_{%s}$" % (source.replace(" ", " \\ "))
@@ -647,61 +684,216 @@ class Plotting(Container):
         self.legend()
         return self.lines
 
+    def plot_time_series(self, y, temporal_labels=None, ax=None, **kwargs):
+        if ax is None:
+            ax = plt.gca()
+        self.plot_line(np.arange(len(y)), y)
+        if not temporal_labels is None:
+            indices = np.linspace(0, len(temporal_labels)-1, 7, dtype=int)
+            self.xticks(indices, temporal_labels[indices], rotation=75)
 
-    def legend(self, handles=None, labels=None, kwargs={}):
-        kwargs = util.merge_dicts({"size": 7}, kwargs)
-        if not (handles is None or labels is None):
-            plt.legend(handles, labels, prop=kwargs)
-        elif handles is None:
-            plt.legend(labels, prop=kwargs)
-        elif labels is None:
-            raise ValueError("Specified Artist handles but no labels for legend()")
+    def plot_line(self, x, y, ax=None, **kwargs):
+        if x is None:
+            x = range(len(y))
+        if ax is None:
+            ax = plt.gca()
+        kwargs = util.merge_dicts(
+            {},
+            kwargs,
+        )
+        ax.plot(x, y, **kwargs)
+
+    def plot_bar(self, x, y, ax=None, **kwargs):
+        if ax is None:
+            ax = plt.gca()
+        kwargs = util.merge_dicts(
+            {"width": 0.8, "bottom": 0.0, "align": "center"},
+            kwargs,
+        )
+        if x is None:
+            x = np.arange(len(y))
+        elif isinstance(x[0], str):
+            x = np.arange(len(x))
+        ax.bar(x, y, **kwargs)
+
+    def plot_scatter(self, x, y, labels=None, ax=None, scatter_kwargs={}, label_kwargs={}):
+        if ax is None:
+            ax = plt.gca()
+        scatter_kwargs = util.merge_dicts(
+            {
+                "s": 75, 
+                "edgecolors": "none", 
+            },
+            scatter_kwargs
+        )
+        label_kwargs = util.merge_dicts(
+            {"color": "w", "va": "center", "ha": "center", "fontsize": 5},
+            label_kwargs
+        )
+        if not labels is None:
+            for _x, _y, _label in zip(x, y, labels):
+                plt.text(_x, _y, _label, **label_kwargs)
+        ax.scatter(x, y, **scatter_kwargs)
+
+    def plot_trend(self, x, y, ax=None, **kwargs):
+        kwargs = util.merge_dicts(
+            {"color": "k", "linestyle": "--", "linewidth": 0.75},
+            kwargs,
+        )
+        z = np.polyfit(x, y, 1)
+        p = np.poly1d(z)
+        self.plot_line(x, p(x), ax=ax, **kwargs)
+
+    def plot_axis(self, loc, axis="x", **kwargs):
+        if axis != "x" and axis != "y":
+            raise ValueError("Only x and y axis lines supported. Received axis=\"%s\"" % (axis))
+        kwargs = util.merge_dicts({"color": "k"}, kwargs)
+        plot_fn = plt.axhline
+        if axis == "y":
+            plot_fn = plt.axvline
+        plot_fn(loc, **kwargs)
+
+    def xlim(self, left=None, right=None, margin=0.0, ax=None, **kwargs):
+        if ax is None:
+            ax = plt.gca()
+        curr_left, curr_right = ax.get_xlim()
+#        if not (left is None or right is None):
+        if not left is None:
+            ax.set_xlim(left=left, **kwargs)
+        if not right is None:
+            ax.set_xlim(right=right, **kwargs)
+        return curr_left, curr_right 
+
+    def ylim(self, bottom=None, top=None, margin=0.0, ax=None, **kwargs):
+        if ax is None:
+            ax = plt.gca()
+        curr_bottom, curr_top = ax.get_ylim()
+#        if not (bottom is None or top is None):
+        if not bottom is None:
+            ax.set_ylim(bottom=bottom, **kwargs)
+        if not top is None:
+            ax.set_ylim(top=top, **kwargs)
+        return curr_bottom, curr_top 
+
+    def lim(self, xlim=None, ylim=None, xmargin=0.0, ymargin=0.0, ax=None, xlim_kwargs={}, ylim_kwargs={}):
+        if xlim is None:
+            xlim = (None, None)
+        if ylim is None:
+            ylim = (None, None)
+        left, right = self.xlim(xlim[0], xlim[1], xmargin, ax, **xlim_kwargs)
+        bottom, top = self.ylim(ylim[0], ylim[1], ymargin, ax, **ylim_kwargs) 
+        return (left, right), (bottom, top)
+
+    def xticks(self, locs=None, labels=None, ax=None, **kwargs):
+        if locs is None and not labels is None:
+            locs = range(len(labels))
+        if ax is None:
+            ax = plt.gca()
+        _locs, _labels = ax.get_xticks(), ax.get_xticklabels()
+        if not locs is None:
+            ax.set_xticks(locs, labels, **kwargs)
+        return _locs, _labels
+
+    def yticks(self, locs=None, labels=None, ax=None, **kwargs):
+        if locs is None and not labels is None:
+            locs = range(len(labels))
+        if ax is None:
+            ax = plt.gca()
+        _locs, _labels = ax.get_yticks(), ax.get_yticklabels()
+        if not locs is None:
+            ax.set_yticks(locs, labels, **kwargs)
+        return _locs, _labels
+
+    def ticks(self, xticks=None, yticks=None, ax=None, xtick_kwargs={}, ytick_kwargs={}):
+        if xticks is None:
+            xticks = (None, None)
+        elif xticks == []:
+            xticks = ([], [])
         else:
-            plt.legend(prop=kwargs)
+            raise ValueError(xticks)
+        if yticks is None:
+            yticks = (None, None)
+        elif yticks == []:
+            yticks = ([], [])
+        else:
+            raise ValueError(yticks)
+        xlocs, xlabels = self.xticks(xticks[0], xticks[1], ax, **xtick_kwargs)
+        ylocs, ylabels = self.yticks(yticks[0], yticks[1], ax, **ytick_kwargs)
+        return (xlocs, xlabels), (ylocs, ylabels)
 
-    def lims(self, xlim=[None, None], ylim=[None, None], margin=0.0):
-        left, right = plt.xlim()
-        if not xlim[0] is None:
-            if xlim[0] == "min":
-                xlim[0] = left
-            plt.xlim(left=xlim[0]-margin)
-        if not xlim[1] is None:
-            if xlim[1] == "max":
-                xlim[1] = right
-            plt.xlim(right=xlim[1]+margin)
-        bottom, top = plt.ylim()
-        if not ylim[0] is None:
-            if ylim[0] == "min":
-                ylim[0] = bottom
-            plt.ylim(bottom=ylim[0]-margin)
-        if not ylim[1] is None:
-            if ylim[1] == "max":
-                ylim[1] = top
-            plt.ylim(top=ylim[1]+margin)
-        return left, right, bottom, top
+    def xlabel(self, label, ax=None, **kwargs):
+        if ax is None:
+            ax = plt.gca()
+        prev_label = ax.get_xlabel()
+        if not label is None:
+            ax.set_xlabel(label, **kwargs)
+        return prev_label
 
-    def ticks(self, xticks=[None, None], yticks=[None, None], xtick_kwargs={}, ytick_kwargs={}):
-        xtick_indices, xtick_labels = plt.xticks(**xtick_kwargs)
-        if xticks == []:
-            plt.xticks([])
-        elif not xticks[1] is None:
-            if xticks[0] is None:
-                xticks[0] = np.arange(len(xticks[1]))
-            plt.xticks(xticks[0], xticks[1])
-        ytick_indices, ytick_labels = plt.yticks(**ytick_kwargs)
-        if yticks == []:
-            plt.yticks([])
-        elif not yticks[1] is None:
-            if yticks[0] is None:
-                yticks[0] = np.arange(len(yticks[1]))
-            plt.yticks(yticks[0], yticks[1])
-        return xtick_indices, xtick_labels, ytick_indices, ytick_labels
+    def ylabel(self, label, ax=None, **kwargs):
+        if ax is None:
+            ax = plt.gca()
+        prev_label = ax.get_ylabel()
+        if not label is None:
+            ax.set_ylabel(label, **kwargs)
+        return prev_label
 
-    def labels(self, xlabel=None, ylabel=None, xlabel_kwargs={}, ylabel_kwargs={}):
-        if not xlabel is None:
-            plt.xlabel(xlabel, **xlabel_kwargs)
-        if not ylabel is None:
-            plt.ylabel(ylabel, **ylabel_kwargs)
+    def labels(self, xlabel=None, ylabel=None, ax=None, xlabel_kwargs={}, ylabel_kwargs={}):
+        prev_xlabel = self.xlabel(xlabel, ax=ax, **xlabel_kwargs)
+        prev_ylabel = self.ylabel(ylabel, ax=ax, **ylabel_kwargs)
+        return prev_xlabel, prev_ylabel
+
+    def title(self, label=None, fontdict=None, loc="center", y=None, pad=6.0, ax=None):
+        if ax is None:
+            ax = plt.gca()
+        if label is None:
+            return ax.get_title()
+        return ax.set_title(label, fontdict=fontdict, loc=loc, y=y, pad=pad)
+
+    def style(self, style, ax=None, **kwargs):
+        if style in plt.style.available:
+            if ax is None:
+                plt.style.use(style, **kwargs)
+            else:
+                raise ValueError()
+        else:
+            if style =="grid":
+                kwargs = util.merge_dicts({"linestyle": ":"}, kwargs)
+                if ax is None:
+                    ax = plt.gca()
+                ax.grid(**kwargs)
+            else:
+                raise ValueError()
+
+    def legend(self, handles=None, labels=None, ax=None, style="standard", **kwargs):
+        if style == "center":
+            kwargs = util.merge_dicts(
+                {
+                    "loc": "upper center", 
+                    "bbox_to_anchor": (0.5, 1.05), 
+                    "ncol": 3, 
+                    "fancybox": True, 
+                    "prop": {"size": 7}, 
+                }, 
+                kwargs
+            )
+        elif style == "standard":
+            kwargs = util.merge_dicts(
+                {}, 
+                kwargs
+            )
+        else:
+            raise ValueError(style)
+#        kwargs = util.merge_dicts({"size": 7}, kwargs)
+        if ax is None:
+            ax = plt.gca()
+        if not (handles is None or labels is None):
+            ax.legend(handles, labels, **kwargs)
+        elif not handles is None:
+            ax.legend(handle=handles, **kwargs)
+        elif not labels is None:
+            ax.legend(labels, **kwargs)
+        else:
+            plt.legend(**kwargs)
 
     def figure(self, size=(8, 8)):
         plt.figure(figsize=size)
@@ -736,8 +928,8 @@ class Plotting(Container):
 
 
     # Precondition: predictions and groundtruth have the following shapes
-    #   Yhats.shape=[n_windows, n_temporal_in, n_spatial, n_responses]
-    #   groundtruth.shape=[n_windows, n_temporal_in, n_spatial, n_responses]
+    #   Yhats.shape=[n_windows, n_temporal_in, n_spatial, n_response]
+    #   groundtruth.shape=[n_windows, n_temporal_in, n_spatial, n_response]
     def plot_model_fit(self, Yhat, spatmp, partition, var):
         # Unpacke variables
         exec_var, plt_var, proc_var = var.execution, var.plotting, var.processing
@@ -745,50 +937,74 @@ class Plotting(Container):
         line_kwargs = plt_var.line_kwargs
         dataset = exec_var.get("dataset", partition)
         n_temporal_in, n_temporal_out = var.mapping.temporal_mapping
-        n_predictors, n_responses = spatmp.misc.get(["n_predictors", "n_responses"])
+        n_predictor, n_response = spatmp.misc.get(["n_predictor", "n_response"])
         response_features, response_indices = spatmp.misc.get(["response_features", "response_indices"])
         n_spatial, spatial_labels, spatial_indices = spatmp.original.get(
-            ["n_spatial", "spatial_labels", "spatial_indices"], 
+            ["n_spatial", "spatial_labels", "spatial_indices"],
             partition
         )
-        # Filter metrics
+        # Filter statistics
+        statistics = spatmp.statistics
+        if exec_var.principle_data_form == "reduced":
+            statistics = spatmp.reduced_statistics
         mins = spatmp.filter_axis(
-            spatmp.reduced_metrics.minimums,
-            [1, 2],
+            statistics.minimums,
+            [0, 1],
             [spatial_indices, response_indices]
         )
         maxes = spatmp.filter_axis(
-            spatmp.reduced_metrics.maximums,
-            [1, 2],
+            statistics.maximums,
+            [0, 1],
             [spatial_indices, response_indices]
         )
         meds = spatmp.filter_axis(
-            spatmp.reduced_metrics.medians,
-            [1, 2],
+            statistics.medians,
+            [0, 1],
             [spatial_indices, response_indices]
         )
         means = spatmp.filter_axis(
-            spatmp.reduced_metrics.means,
-            [1, 2],
+            statistics.means,
+            [0, 1],
             [spatial_indices, response_indices]
         )
         stddevs = spatmp.filter_axis(
-            spatmp.reduced_metrics.standard_deviations,
-            [1, 2],
+            statistics.standard_deviations,
+            [0, 1],
             [spatial_indices, response_indices]
         )
         # Get groundtruth data (Y, etc) then filter and reformat predictions (Yhat) to match groundtruth
         #   Pull groundtruth data - response_features Y, temporal_labels, and their periodic_indices
-        Y = spatmp.reduced.get("response_features", partition)
-        temporal_labels = spatmp.reduced.get("temporal_labels", partition)
-        periodic_indices = spatmp.reduced.get("periodic_indices", partition)
-        Y, temporal_labels, periodic_indices = Y[0,:,:,:], temporal_labels[0,:], periodic_indices[0,:]
-        #   Reformat and filter predictions - filter for contiguous outputs then reshape
-        Yhat = np.reshape(Yhat, (spatmp.reduced.n_channel, -1) + Yhat.shape[1:])
-        contiguous_window_indices = util.contiguous_window_indices(Yhat.shape[1], Yhat.shape[2], 1)
-        Yhat = Yhat[0,contiguous_window_indices,:,:,:]
-        Yhat = np.reshape(Yhat, (-1,) + Yhat.shape[2:])
-        event_data = np.zeros((Y.shape[0],n_spatial,n_responses,2))
+        if exec_var.principle_data_form == "original":
+            Y = spatmp.original.get("response_features", partition)
+            temporal_labels = spatmp.original.get("temporal_labels", partition)
+            periodic_indices = spatmp.original.get("periodic_indices", partition)
+            #   Reformat and filter predictions - filter for contiguous outputs then reshape
+            n_sample, n_temporal_out, n_spatial, n_feature = Yhat.shape
+            contiguous_window_indices = util.contiguous_window_indices(n_sample, n_temporal_out, 1)
+            Yhat = Yhat[contiguous_window_indices,:,:,:]
+            Yhat = np.reshape(Yhat, (-1,) + Yhat.shape[-2:])
+        elif exec_var.principle_data_form == "reduced":
+            Y = spatmp.reduced.get("response_features", partition)
+            temporal_labels = spatmp.reduced.get("temporal_labels", partition)
+            periodic_indices = spatmp.reduced.get("periodic_indices", partition)
+            Y, temporal_labels, periodic_indices = Y[0,:,:,:], temporal_labels[0,:], periodic_indices[0,:]
+            #   Reformat and filter predictions - filter for contiguous outputs then reshape
+            n_channel, n_sample, n_temporal_out, n_spatial, n_feature = Yhat.shape
+            contiguous_window_indices = util.contiguous_window_indices(n_sample, n_temporal_out, 1)
+            Yhat = Yhat[0,contiguous_window_indices,:,:,:]
+            Yhat = np.reshape(Yhat, (-1,) + Yhat.shape[-2:])
+        # Pull spatial elements selected for plotting
+        try:
+            plotted_spatial_indices = spatmp.indices_from_selection(
+                spatmp.original.get("spatial_labels", partition), 
+                plt_var.spatial_selection
+            )
+        except:
+            plotted_spatial_indices = np.arange(n_spatial)
+#        Y, Yhat = Y[:,plotted_spatial_indices,:], Yhat[:,plotted_spatial_indices,:]
+#        n_spatial = len(plotted_spatial_indices)
+        #####################
+        event_data = np.zeros((Y.shape[0],n_spatial,n_response,2))
         cache_plot_data = False
 #        cache_plot_data = True
         plt_range = [0.0, 1.0]
@@ -813,66 +1029,66 @@ class Plotting(Container):
         std_colors = [cmap(0.25*i) for i in alphas]
         cmap = plt.get_cmap("Reds")
         extreme_colors = [cmap(1.0*i) for i in alphas]
-        for o in range(n_responses):
+        for o in range(n_response):
             y_min, y_max = sys.float_info.max, sys.float_info.min
-            spatial_indices = np.arange(n_spatial)
-            if self.feature_plot_order_map[response_features[o]] == "descending":
+            spatial_indices = plotted_spatial_indices
+            if self.feature_plot_order_map.get(response_features[o], "ascending") == "descending":
                 spatial_indices = np.flip(spatial_indices)
             n_spa_plotted, n_spa_per_plt = 0, plt_var.get("n_spatial_per_plot")
             for s in spatial_indices:
                 if "confusion" in line_opts:
                     self._plot_zscore_confusion(
-                        Yhat[:,s,o], 
+                        Yhat[:,s,o],
                         Y[:,s,o][n_temporal_in:],
-                        means[periodic_indices[n_temporal_in:],s,o], 
+                        means[periodic_indices[n_temporal_in:],s,o],
                         stddevs[periodic_indices[n_temporal_in:],s,o]
                     )
                     path = plt_dir + os.sep + "Confusion_Partition[%s]_Subbasins[%s]_Response[%s].png" % (
-                        partition, 
-                        ",".join(spatial_labels[s:s+1]), 
+                        partition,
+                        ",".join(spatial_labels[s:s+1]),
                         response_features[o]
                     )
                     self.save_figure(path)
                 if "groundtruth" in line_opts:
                     self._plot_groundtruth(
-                        Y[:,s,o], 
-                        dataset, 
-                        n_spatial, 
-                        spatial_labels[s], 
+                        Y[:,s,o],
+                        dataset,
+                        n_spatial,
+                        spatial_labels[s],
                         n_spa_per_plt,
-                        groundtruth_colors[n_spa_plotted%n_spa_per_plt], 
+                        groundtruth_colors[n_spa_plotted%n_spa_per_plt],
                     )
                 if "prediction" in line_opts:
                     self._plot_prediction(
-                        Yhat[:,s,o], 
-                        n_temporal_in, 
-                        n_temporal_out, 
-                        n_spatial, 
-                        spatial_labels[s], 
+                        Yhat[:,s,o],
+                        n_temporal_in,
+                        n_temporal_out,
+                        n_spatial,
+                        spatial_labels[s],
                         n_spa_per_plt,
-                        Yhat_colors[n_spa_plotted%n_spa_per_plt], 
-                        line_kwargs["prediction"]["label"], 
+                        Yhat_colors[n_spa_plotted%n_spa_per_plt],
+                        line_kwargs["prediction"]["label"],
                     )
                 if "groundtruth_extremes" in line_opts:
                     self._plot_groundtruth_extremes(
-                        Y[:,s,o], 
-                        means[periodic_indices,s,o], 
-                        stddevs[periodic_indices,s,o], 
-                        dataset, 
-                        n_spatial, 
-                        spatial_labels[s], 
+                        Y[:,s,o],
+                        means[periodic_indices,s,o],
+                        stddevs[periodic_indices,s,o],
+                        dataset,
+                        n_spatial,
+                        spatial_labels[s],
                         n_spa_per_plt,
                         plt_range
                     )
                 if "prediction_extremes" in line_opts:
                     self._plot_prediction_extremes(
-                        Yhat[:,s,o], 
-                        means[windowed_output_periodic_indices,s,o], 
-                        stddevs[windowed_output_periodic_indices,s,o], 
-                        n_temporal_in, 
-                        n_temporal_out, 
-                        n_spatial, 
-                        spatial_labels[s], 
+                        Yhat[:,s,o],
+                        means[windowed_output_periodic_indices,s,o],
+                        stddevs[windowed_output_periodic_indices,s,o],
+                        n_temporal_in,
+                        n_temporal_out,
+                        n_spatial,
+                        spatial_labels[s],
                         n_spa_per_plt,
                         plt_range
                     )
@@ -946,7 +1162,7 @@ class Plotting(Container):
                             label = ("Subbasin %s " % (spatial_labels[s])) + label
                         std_interval = np.array([-1, 1]) * z_scores[i]
                         lower_bounds = spatial_response_means + std_interval[0] * spatial_response_stddevs
-                        if response_features[o] == "FLOW_OUTcms": 
+                        if response_features[o] == "FLOW_OUTcms":
                             lower_bounds[lower_bounds < 0] = 0
                         upper_bounds = spatial_response_means + std_interval[1] * spatial_response_stddevs
                         plt.fill_between(indices, lower_bounds, upper_bounds, color=std_colors[i], linestyle="-", label=label, linewidth=self.line_width)
@@ -961,7 +1177,11 @@ class Plotting(Container):
                     if "xlabel" in fig_opts:
                         plt.xlabel("Time", fontsize=8)
                     if "ylabel" in fig_opts:
-                        plt.ylabel(self.feature_ylabel_map[response_features[o]], fontsize=8)
+                        
+                        plt.ylabel(
+                            self.feature_ylabel_map.get(response_features[o], response_features[o]), 
+                            fontsize=8
+                        )
                     if "xticks" in fig_opts:
                         self._plot_xticks(temporal_labels, plt_range)
                     if "yticks" in fig_opts:
@@ -972,18 +1192,19 @@ class Plotting(Container):
                         self._plot_legend()
                     if "save" in fig_opts:
                         self._savefigs(
-                            partition, 
-                            spatial_labels[s:s+1], 
-                            response_features[o], 
-                            line_opts, 
-                            plt_range, 
+                            partition,
+                            spatmp.misc.spatial_label_field, 
+                            spatial_labels[s:s+1],
+                            response_features[o],
+                            line_opts,
+                            plt_range,
                             plt_dir
                         )
                     y_min, y_max = sys.float_info.max, sys.float_info.min
 
 
     def _plot_groundtruth(self, Y, dataset, n_spa, spa_label, n_spa_per_plt, color):
-        label = self.dataset_legend_map[dataset]
+        label = self.dataset_legend_map.get(dataset, "Groundtruth")
         if n_spa > 1 and n_spa_per_plt > 1:
             label = ("Subbasin %s " % (str(spa_label))) + label
         plt.plot(Y, color=color, linestyle="-", label=label, linewidth=self.gt_line_width)
@@ -1021,12 +1242,12 @@ class Plotting(Container):
                 if n_spa > 1 and n_spa_per_plt > 1:
                     label = ("Subbasin %s " % (spa_label)) + label
                 plt.plot(
-                    events, 
-                    color=color, 
-                    linestyle="-", 
-                    marker=marker, 
-                    label=label, 
-                    linewidth=2*lw, 
+                    events,
+                    color=color,
+                    linestyle="-",
+                    marker=marker,
+                    label=label,
+                    linewidth=2*lw,
                     markersize=0.75*self.marker_size
                 )
 
@@ -1057,13 +1278,13 @@ class Plotting(Container):
                     label = ("Subbasin %s " % (spa_label)) + label
                 indices = np.arange(n_tmp_in, n_tmp_in + events.shape[0])
                 plt.plot(
-                    indices, 
-                    events, 
-                    color=color, 
-                    linestyle="-", 
-                    marker=marker, 
-                    label=label, 
-                    linewidth=2*lw, 
+                    indices,
+                    events,
+                    color=color,
+                    linestyle="-",
+                    marker=marker,
+                    label=label,
+                    linewidth=2*lw,
                     markersize=0.75*self.marker_size
                 )
 
@@ -1072,12 +1293,12 @@ class Plotting(Container):
         confusion = util.compute_zscore_confusion(Yhat, Y, means, stddevs, normalize=False)
         print(confusion)
         interval_labels = [
-            "Extremely Dry", 
-            "Severely Dry", 
-            "Moderately Dry", 
-            "Near Normal", 
-            "Moderately Wet", 
-            "Severely Wet", 
+            "Extremely Dry",
+            "Severely Dry",
+            "Moderately Dry",
+            "Near Normal",
+            "Moderately Wet",
+            "Severely Wet",
             "Extremely Wet"
         ]
         df = pd.DataFrame(confusion, index=interval_labels, columns=interval_labels)
@@ -1118,9 +1339,9 @@ class Plotting(Container):
         plt.ylim(y_interval[0]-y_range/20, y_interval[1]+y_range/20)
 
 
-    def _plot_xticks(self, x_labels, plt_range):
-        xtick_indices = np.arange(x_labels.shape[0])
-        xtick_labels = x_labels[xtick_indices]
+    def _plot_xticks(self, xlabels, plt_range):
+        xtick_indices = np.arange(xlabels.shape[0])
+        xtick_labels = xlabels[xtick_indices]
         n_xticks = 8
         n_xticks = int(n_xticks / (plt_range[1] - plt_range[0]))
         start = round(plt_range[0] * (xtick_indices.shape[0] - 1))
@@ -1138,21 +1359,144 @@ class Plotting(Container):
         plt.yticks(fontsize=7)
 
 
-    def _savefigs(self, partition, spatial_labels, feature, line_opts, plt_range, plt_dir):
+    def _savefigs(self, partition, spatial_label_field, spatial_labels, feature, line_opts, plt_range, plt_dir):
         spatials = ",".join(map(str, spatial_labels))
         opts = list(line_opts)
         if "confusion" in opts:
             opts.remove("confusion")
-        fname = "Evaluation_Partition[%s]_Subbasins[%s]_Response[%s]_Options[%s].png" % (
-            partition, spatials, feature, ",".join(opts)
+        fname = "Evaluation_Partition[%s]_%s[%s]_Response[%s]_Options[%s].png" % (
+            partition, spatial_label_field.capitalize(), spatials, feature, ",".join(opts)
         )
         path = os.sep.join([plt_dir, fname])
         plt.savefig(path, bbox_inches="tight")
-        fname = "Evaluation_Partition[%s]_Subbasins[%s]_Response[%s]_Options[%s].pdf" % (
-            partition, spatials, feature, ",".join(opts)
-        )
-        path = os.sep.join([plt_dir, fname])
-#        plt.savefig(path, bbox_inches="tight", dpi=200)
+        plt.close()
+
+    def plot_error_scatter(self, model_i_errors, model_j_errors, datasets, var, path):
+        def get_node_indegrees(datasets, var):
+            dataset = datasets.get("dataset", "train")
+            return np.array(list(dataset.graph.original.get("node_indegree_map", var.partition).values()), dtype=int)
+        def get_node_metrics(model_errors, var):
+            return np.array(list(model_errors.get(var.metric, var.partition).get(var.response_feature).values()))
+        def get_node_stds(datasets, var):
+            dataset = datasets.get("dataset", "train")
+            return dataset.spatiotemporal.filter_axis(
+                dataset.spatiotemporal.statistics.standard_deviations, 
+                [0, 1], 
+                [
+                    dataset.spatiotemporal.original.get("spatial_indices", var.partition), 
+                    dataset.spatiotemporal.misc.response_indices
+                ], 
+            ) 
+        # Get spatial resolution errors
+        points_legend_label = datasets.get("dataset", var.partition).spatiotemporal.misc.spatial_label_field
+        spatial_error_map_i = model_i_errors.get(var.metric, var.partition).get(var.response_feature)
+        spatial_error_map_j = model_j_errors.get(var.metric, var.partition).get(var.response_feature)
+        spatial_labels_i, errors_i = list(spatial_error_map_i.keys()), np.array(list(spatial_error_map_i.values()))
+        spatial_labels_j, errors_j = list(spatial_error_map_j.keys()), np.array(list(spatial_error_map_j.values()))
+        if 0:
+            print("model_i_errors =", spatial_error_map_i)
+            print("model_j_errors =", spatial_error_map_j)
+            print("No. Nodes =", len(spatial_labels_i))
+        # Unpack the data
+        dataset = datasets.get("dataset", var.partition)
+        spatiotemporal = dataset.spatiotemporal
+        spatial = dataset.spatial
+        temporal = dataset.temporal
+        graph = dataset.graph
+        #
+        if var.plot_args.x_axis == "in-degree":
+            x_i = get_node_indegrees(datasets, var)
+            x_j = get_node_indegrees(datasets, var)
+            xlabel = "Node In-degree"
+        elif var.plot_args.x_axis == "metric":
+            x_i = get_node_metrics(model_i_errors, var)
+            x_j = get_node_metrics(model_j_errors, var)
+            xlabel = "$%s_{%s}$" % (var.metric, var.model_i)
+        elif var.plot_args.x_axis == "stddev":
+            x_i = get_node_stds(datasets, var)
+            x_j = get_node_stds(datasets, var)
+            x_i, x_j = np.squeeze(x_i), np.squeeze(x_j)
+            feature_name = var.response_feature
+            if var.response_feature == "FLOW_OUTcms":
+                feature_name = "Streamflow"
+            elif var.response_feature == "SWmm":
+                feature_name = "Soil Water"
+            elif var.response_feature == "speedmph":
+                feature_name = "MPH"
+            xlabel = "$\sigma_{%s}$" % (feature_name)
+        else:
+            raise NotImplementedError("var.plot_args.x_axis=%s" % (var.plot_args.x_axis))
+        if var.plot_args.z_axis is None:
+            z_i = np.ones(x_i.shape)
+            z_j = np.ones(x_j.shape)
+        elif var.plot_args.z_axis == "in-degree":
+            z_i = get_node_indegrees(datasets, var)
+            z_j = get_node_indegrees(datasets, var)
+            xlabel = "Node In-degree"
+        elif var.plot_args.z_axis == "metric":
+            z_i = get_node_metrics(model_i_errors, var)
+            z_j = get_node_metrics(model_j_errors, var)
+            xlabel = "$%s_{%s}$" % (var.metric, var.model_i)
+        elif var.plot_args.z_axis == "stddev":
+            z_i = get_node_stds(datasets, var)
+            z_j = get_node_stds(datasets, var)
+            z_i, z_j = np.squeeze(z_i), np.squeeze(z_j)
+        else:
+            raise NotImplementedError("var.plot_args.z_axis=%s" % (var.plot_args.z_axis))
+        if var.plot_args.y_axis == "diff":
+            x = x_i
+            y = errors_j - errors_i
+            z = z_i
+            if var.plot_args.z_axis is None:
+                z_alpha = z
+                z_scale = z * 75
+                z_color = "b"
+            else:
+                z_alpha = util.minmax_transform(z, min(z), max(z), a=1/10, b=1)
+                z_scale = util.minmax_transform(z, min(z), max(z), a=10, b=100)
+                z_alpha = np.ones(z.shape)
+                z_color = [
+                    plt.get_cmap("Blues")(fac) for fac in util.minmax_transform(z, min(z), max(z), a=3/8, b=1)
+                ]
+            plt.axhline(0, color="k", linestyle="-", alpha=4/8, zorder=0)
+            labels_i, labels_j = None, None
+            if "point_labels" in var.plot_args.plot_options:
+                labels_i, labels_j = spatial_labels_i, spatial_labels_j
+            self.plot_scatter(
+                x,
+                y,
+                labels=labels_i,
+                scatter_kwargs={
+                    "c": z_color, 
+                    "label": points_legend_label.capitalize(), 
+                    "alpha": z_alpha, 
+                    "s": z_scale, 
+                }
+            )
+            if "trend" in var.plot_args.plot_options:
+                self.plot_trend(x, y, label="Trend")
+            plt.ylabel("$\Delta$ %s (%s $\longrightarrow$ %s)" % (var.metric, var.model_i, var.model_j))
+        elif var.plot_args.y_axis == "raw":
+            y_i, y_j = errors_i, erorrs_j
+            self.plot_scatter(x_i, y_i, scatter_kwargs={"c": "r", "label": var.model_i})
+            if "trend" in var.plot_args.plot_options:
+                self.plot_trend(x, y, color="r", label="%s Trend" % (var.model_i))
+            x, y = indegrees, errors_j
+            self.plot_scatter(x_j, y_j, scatter_kwargs={"c": "b", "label": var.model_j})
+            if "trend" in var.plot_args.plot_options:
+                self.plot_trend(x, y, color="b", label="%s Trend" % (var.model_j))
+            plt.ylabel(var.metric)
+        else:
+            raise NotImplementedError("var.plot_args.y_axis=%s" % (var.plot_args.y_axis))
+        if var.plot_args.x_axis == "in-degree":
+            self.xticks(None, np.arange(0, max(x)+1))
+            self.xlim(-0.5, max(x)+0.5)
+#        else:
+#            self.ticks([None, None])
+#        plt.xlim(min(x), max(indegrees)+0.25)
+        plt.xlabel(xlabel)
+        plt.legend()
+        plt.savefig(path, bbox_inches="tight")
         plt.close()
 
 
@@ -1180,7 +1524,7 @@ def plot_wabash():
     fname_item_map = {"riv1": "rivers", "subs1": "subbasins"}
     item_shapes_map = {fname_item_map[fname]: shapefile.Reader(path) for fname, path in fname_path_map.items()}
     path = os.sep.join(["Plots", "Watershed_Components[%s]_Watershed[%s].png"]) % (
-        ",".join(item_shapes_map.keys()), 
+        ",".join(item_shapes_map.keys()),
         watershed
     )
     plt.plot_watershed(item_shapes_map, subbasin_river_map, path, highlight=False, watershed=watershed, river_opts={"color_code": False, "name": False})
@@ -1198,89 +1542,29 @@ def plot_little():
     fname_item_map = {"gis_streams": "rivers", "basins": "subbasins"}
     item_shapes_map = {fname_item_map[fname]: shapefile.Reader(path) for fname, path in fname_path_map.items()}
     path = os.sep.join(["Plots", "Watershed_Components[%s]_Watershed[%s].png"]) % (
-        ",".join(item_shapes_map.keys()), 
+        ",".join(item_shapes_map.keys()),
         watershed
     )
     plt.plot_watershed(item_shapes_map, subbasin_river_map, path, highlight=False, watershed=watershed)
 
 
-def plot_error_scatter(error_path_i, error_path_j, data):
-    import Gather
-    graph = data.train__dataset.graph.original
-    err_con_i = Gather.get_report_errors(error_path_i)
-    err_con_j = Gather.get_report_errors(error_path_j)
-    label_i = "-".join(error_path_i.split(os.sep)[-3:-2])
-    label_j = "-".join(error_path_j.split(os.sep)[-3:-2])
-    spatial_err_map_i = err_con_i.get("NRMSE", "test").get("FLOW_OUTcms")
-    spatial_err_map_j = err_con_j.get("NRMSE", "test").get("FLOW_OUTcms")
-    spatial_labels_i, errors_i = list(spatial_err_map_i.keys()), np.array(list(spatial_err_map_i.values()))
-    spatial_labels_j, errors_j = list(spatial_err_map_j.keys()), np.array(list(spatial_err_map_j.values()))
-    spatial_indices_i = data.indices_from_selection(graph.node_labels, ["literal"]+spatial_labels_i)
-    org_node_indegree_map = graph.node_indegree_map
-    node_indegree_map = {}
-    for label in spatial_labels_i:
-        node_indegree_map[label] = org_node_indegree_map[label]
-    node_indegree_map = {}
-    for label, idx in zip(spatial_labels_i, spatial_indices_i):
-        node_indegree_map[label] = np.sum(graph.adjacency[spatial_indices_i,idx])
-    error_difs = errors_j - errors_i
-    indegrees = util.get_dict_values(node_indegree_map, spatial_labels_i)
-    plt.figure(figsize=(10, 10))
-    print("No. Nodes =", len(spatial_labels_i))
-    if 1:
-        x, y = indegrees, error_difs
-        plt.scatter(x, y, 75, color="b", label=label_j)
-        z = np.polyfit(x, y, 1)
-        p = np.poly1d(z)
-        plt.plot(x, p(x), "k--", linewidth=0.75)
-        plt.axhline(0.0, color="r")
-        for _x, _y, _s in zip(x, y, spatial_labels_i):
-            plt.text(_x, _y, _s, color="w", va="center", ha="center", fontsize=5)
-        plt.xlim(-0.25, max(indegrees)+0.25)
-        plt.xlabel("Node In-Degree")
-        plt.ylabel("$\Delta$ NRMSE (%s - %s)" % (label_j, label_i))
-    if 0:
-        x, y = indegrees, errors_i
-#       y, x = indegrees, errors_i
-        plt.scatter(x, y, color="r", label=label_i)
-        x, y = indegrees, errors_j
-#       y, x = indegrees, errors_j
-        plt.scatter(x, y, color="b", label=label_j)
-        plt.xlim(-0.25, max(indegrees)+0.25)
-        plt.xlabel("Node In-Degree")
-        plt.ylabel("NRMSE")
-        plt.legend()
+class Spatial(Plotting):
 
-
-def plot_error_scatters(model_dir_i, model_dir_j):
-    import matplotlib as mpl
-    mpl.style.use('classic')
-    import glob
-    from Variables import Variables
-    from Data.Data import Data
-    var = Variables()
-    var.get("execution").set("dataset", "wabashriver_swat", "*")
-    data = Data(Variables())
-    out_dir = os.sep.join([model_dir_j, "ComparisonScatterPlots"])
-    os.makedirs(out_dir, exist_ok=True)
-    paths = glob.glob(os.sep.join([model_dir_i, "*", "Graph_River*.png"]))
-    if len(paths) > 0:
-        paths.sort(key=os.path.getctime)
-        names = [path.split(os.sep)[-1].replace("Graph_River[", "").replace("].png", "") for path in paths]
-    else:
-        paths = glob.glob(os.sep.join([model_dir_i, "*"+os.sep]))
-        paths.sort(key=os.path.getctime)
-        names = [path.split(os.sep)[-2] for path in paths]
-    paths_i = glob.glob(os.sep.join([model_dir_i, "*", "*Errors.txt"]))
-    paths_i.sort(key=os.path.getctime)
-    paths_j = glob.glob(os.sep.join([model_dir_j, "*", "*Errors.txt"]))
-    paths_j.sort(key=os.path.getctime)
-    for path_i, path_j, name in zip(paths_i, paths_j, names):
-        print(name.capitalize())
-        plot_error_scatter(path_i, path_j, data)
-        path = os.sep.join([out_dir, name+".png"])
-        plt.savefig(path, bbox_inches="tight", dpi=200)
-        plt.close()
+    def plot_model_fit(self, Y, Yhat, dataset, partition, var):
+        spa = dataset.spatial
+        for i, feature in enumerate(spa.misc.response_features):
+            self.plot_bar(None, Y[:,i], alpha=7/8, color="k", label="Gt[%s]" % (feature))
+            self.plot_bar(None, Yhat[:,i], alpha=5/8, color="r", label="Pr[%s]" % (feature))
+        self.plot_axis(10, "x", linestyle="--", linewidth=5/8)
+        self.lim([-1, Y.shape[0]], [spa.statistics.minimums[i], 21/20*spa.statistics.maximums[i]])
+        self.legend()
+        path = os.sep.join(
+            [
+                var.plotting.plot_dir, 
+                "Evaluation_Partition[%s]_Response[%s].png" % (partition, ",".join(spa.misc.response_features))
+            ]
+        )
+        self.save_figure(path)
 
 
 if __name__ == "__main__":

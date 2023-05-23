@@ -47,7 +47,7 @@ class Container:
             if len(name) != len(partition):
                 raise ValueError("Name and partition lists must be equal length")
             for _name, _partition in zip(name, partition):
-                self.__set(_name, value, _partition, path) 
+                self.__set(_name, value, _partition, path)
         # set single value for multiple vars under one or no partition(s)
         elif isinstance(name, list):
             for _name in name:
@@ -178,6 +178,19 @@ class Container:
             del con.__dict__[key]
         return self
 
+    def has(self, name, partition=None, path=None, recurse=True):
+        con = self.get_container(path)
+        if not recurse:
+            return self.create_key(name, partition) in con
+        return con.__has(name, partition)
+
+    def __has(self, name, partition=None):
+        checks = [self.create_key(name, partition) in self]
+        for _name, value, _partition in self.get_name_value_partitions(sort=False):
+            if isinstance(value, Container):
+                checks.append(value.__has(name, partition))
+        return any(checks)
+
     # Public copy method: implements all macro copy operations
     def copy(self, con):
         bad_type = True
@@ -218,7 +231,7 @@ class Container:
                 con.__set(_name, value, _partition)
         return con
 
-    # Merge combines all vars of this and the given container 
+    # Merge combines all vars of this and the given container
     def merge(self, con, recurse_surface_var=True):
         if recurse_surface_var:
             self.merge_surface_var(con)
@@ -274,45 +287,102 @@ class Container:
                     paths += [[name] + path for path in child_paths]
         return paths
 
-    def find(self, name, value, condition="==", partition=None, path=None, recurse=True):
+    def find(self, name, value, comparator="==", partition=None, path=None, recurse=True):
+        if isinstance(name, str): # cast to multi-condition
+            name = [name]
+            value = [value]
+        elif not isinstance(value, list):
+            raise ValueError(
+                "Input name=%s contains multiple instances but value=%s does not" % (str(name), str(value))
+            )
+        elif len(name) != len(value):
+            raise ValueError(
+                "Input name=%s does not map one-to-one with value=%s" % (str(name), str(value))
+            )
+        if not isinstance(comparator, list): # broadcast comparator singleton to all name-value pairs
+            comparator = [comparator for _ in range(len(name))]
+        for i in range(len(comparator)):
+            if isinstance(comparator[i], str):
+                if not comparator[i] in util.comparator_fn_map:
+                    raise NotImplementedError("Unknown comparator=\"%s\"" % (comparator[i]))
+                comparator[i] = util.comparator_fn_map[comparator[i]]
+            elif not isinstance(comparator[i], callable):
+                raise ValueError(
+                    "Input comparator=%s must be str, callable, or list of str and/or callable" % (str(comparator))
+                )
         con = Container()
         _con = self.get_container(path)
         for _name, _value, _partition in _con.get_name_value_partitions(False):
             if _con.is_container(_name, _partition):
-                if _value.__find(name, value, condition, partition, recurse):
+                checks = []
+                for __name, __value, __comparator in zip(name, value, comparator):
+                    checks.append(_value.__find(__name, __value, __comparator, partition, recurse))
+                if all(checks):
                     con.set(_name, _value, _partition)
             else:
                 con.set(_name, _value, _partition)
         return con
 
-    def __find(self, name, value, condition="==", partition=None, recurse=True, in_recursion=False): 
+    def __find(self, name, value, comparator=lambda a, b: a == b, partition=None, recurse=True, in_recursion=False):
         checks = []
         for _name, _value, _partition in self.get_name_value_partitions(False):
             if self.is_container(_name, _partition) and recurse:
-                checks.append(_value.__find(name, value, condition, partition, recurse, True))
+                checks.append(_value.__find(name, value, comparator, partition, recurse, True))
             elif _name == name and _partition == partition:
-                if condition == "==":
-                    checks.append(_value == value)
-                elif condition == "!=":
-                    checks.append(_value != value)
-                elif condition == ">=":
-                    checks.append(_value >= value)
-                elif condition == "<=":
-                    checks.append(_value <= value)
-                elif condition == ">":
-                    checks.append(_value > value)
-                elif condition == "<":
-                    checks.append(_value < value)
-                else:
-                    raise NotImplementedError("Condition \"%s\" not implemented for find()" % (condition))
+                checks.append(comparator(_value, value))
         return any(checks)
+
+    def hash(self, n_digits):
+        _hash = self.__hash(n_digits) % 10**n_digits
+#        if len(str(_hash)) < n_digits:
+#            _hash += 10**(n_digits - 1)
+        return _hash * 10**(n_digits - len(str(_hash)))
+
+    def __hash(self, n_digits):
+        _sum = 0
+        for name, value, partition in self.get_name_value_partitions(sort=False):
+            if self.is_reserved(name):
+                continue
+            if isinstance(value, Container):
+                _sum += value.hash(n_digits)
+            else:
+                _sum += util.hash_str_to_int(name, n_digits)
+                _sum += util.hash_str_to_int(str(value), n_digits)
+                if not partition is None:
+                    _sum += util.hash_str_to_int(partition, n_digits)
+        return _sum
+
+    def get_names(self, sort=False):
+        names = set()
+        for key, value in self.get_key_values():
+            partition = self.get_partition_from_key(key)
+            name = self.get_name_from_key(key)
+            if not self.is_reserved(name):
+                names.add(name)
+        names = list(names)
+        if sort:
+            names.sort()
+        return names
+
+    def get_values(self, sort=False):
+        values = list(self.__dict__.values())
+        if sort:
+            values = sorted(values)
+        return values
+
+    def get_partitions(self, sort=False):
+        partitions = self.__dict__.get("partitions", [])
+        if sort:
+            partitions = sorted(partitions)
+        return partitions
 
     def get_name_value_partitions(self, sort=True, order=""):
         name_value_partitions = []
         for key, value in self.get_key_values():
             partition = self.get_partition_from_key(key)
             name = self.get_name_from_key(key)
-            name_value_partitions += [[name, value, partition]]
+            if not self.is_reserved(name):
+                name_value_partitions += [[name, value, partition]]
         if sort:
             name_value_partitions.sort(key = lambda x: x[0])
         if order == "basic_first":
@@ -335,10 +405,10 @@ class Container:
     # Validate the type is correct for the given input
     def validate_type(self, item, category):
         category_types_map = {
-            "name": [util.Types.is_string], 
-            "value": [util.Types.is_anything], 
-            "partition": [util.Types.is_none, util.Types.is_string], 
-            "path": [util.Types.is_none, util.Types.is_list_of_strings], 
+            "name": [util.Types.is_string],
+            "value": [util.Types.is_anything],
+            "partition": [util.Types.is_none, util.Types.is_string],
+            "path": [util.Types.is_none, util.Types.is_list_of_strings],
         }
         bad_type = not any(type_func(item) for type_func in category_types_map[category])
         if bad_type:
@@ -347,10 +417,10 @@ class Container:
     # Validate the type is correct for the given input
     def old_validate_type(self, item, category, multi_value=False):
         category_types_map = {
-            "name": [util.Types.is_string, util.Types.is_list_of_strings], 
-            "value": [util.Types.is_list, util.Types.is_anything], 
-            "partition": [util.Types.is_none, util.Types.is_string, util.Types.is_list_of_strings], 
-            "path": [util.Types.is_none, util.Types.is_list_of_strings], 
+            "name": [util.Types.is_string, util.Types.is_list_of_strings],
+            "value": [util.Types.is_list, util.Types.is_anything],
+            "partition": [util.Types.is_none, util.Types.is_string, util.Types.is_list_of_strings],
+            "path": [util.Types.is_none, util.Types.is_list_of_strings],
         }
         if multi_value:
             category_types_map["value"] = [util.Types.is_list]
@@ -451,6 +521,21 @@ class Container:
     def is_empty(self):
         return self.size() == 0
 
+    def to_dict(self):
+        _dict = {}
+        for key, value in self.get_key_values():
+            _dict[key] = value
+            if isinstance(value, Container):
+                _dict[key] = value.to_dict()
+        return _dict
+
+    def from_dict(self, _dict):
+        for key, value in _dict.items():
+            if isinstance(value, dict):
+                value = Container().from_dict(value)
+            self.set(key, value)
+        return self
+
     def to_string(self, recurse=True, sort=True, extent=[110, 1], in_recursion=False):
         def cut_x(line, x_extent):
             if x_extent < 0:
@@ -472,6 +557,8 @@ class Container:
                 max_key_len = len(key)
         left_just = max_key_len
         for name, value, partition in self.get_name_value_partitions(sort=sort, order="basic_first"):
+            if self.is_reserved(name): # don't bother displaying reserved vars
+                continue
             key = self.create_key(name, partition)
             value_string = str(value)
             if isinstance(value, Container):
@@ -480,7 +567,7 @@ class Container:
                 var_string = "Container @ size(%s)" % (util.format_memory(value.get_memory_of()))
                 if recurse:
                     var_string += " = \n%s%s" % (
-                        indent, 
+                        indent,
                         value.to_string(recurse, sort, extent, True).replace("\n", "\n%s" % (indent))
                     )
                 var_string = "%-*s = %s" % (left_just, key, var_string)
@@ -521,6 +608,21 @@ class Container:
                     lines[i] = cut_x(lines[i], extent[0])
         return "\n".join(lines)
 
+    def __eq__(self, con):
+        if not isinstance(con, Container):
+            return False
+        if len(self) != len(con):
+            return False
+        if not self.get_keys() == con.get_keys():
+            return False
+        eqs = []
+        for name, value, partition in self.get_name_value_partitions():
+            eqs.append(value == con.__get(name, partition))
+        return all(eqs)
+
+    def __len__(self):
+        return len(self.__dict__)
+
     def __str__(self):
         return self.to_string()
 
@@ -528,4 +630,6 @@ class Container:
         return self.key_exists(obj)
 
     def __getitem__(self, key):
+        if isinstance(key, int) or isinstance(key, slice):
+            return list(self.get_name_value_partitions())[key]
         return self.get(key)

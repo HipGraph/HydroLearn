@@ -1,7 +1,8 @@
 import os
-from pandas import read_csv
+
 from Data.DataSelection import DataSelection
 from Container import Container
+import Utility as util
 
 
 def dataset_name():
@@ -11,33 +12,39 @@ def dataset_name():
 class DataVariables(Container):
 
     def __init__(self):
-        self.set("loading", self.loading_var(Container()))
-        self.set("caching", self.caching_var(Container()))
-        self.set("partitioning", self.partitioning_var(Container()))
-        self.set("structure", self.structure_var(Container()))
+        self.loading = self.loading_var(Container())
+        self.caching = self.caching_var(Container())
+        self.partitioning = self.partitioning_var(Container())
+        self.structure = self.structure_var(Container())
 
     def loading_var(self, con):
         raise NotImplementedError()
 
     def caching_var(self, con):
-        con.set("from_cache", self.from_cache())
-        con.set("to_cache", self.to_cache())
-        con.set("data_type", self.data_type())
+        con.from_cache = self.from_cache()
+        con.to_cache = self.to_cache()
+        con.data_type = self.data_type()
         return con
 
     def partitioning_var(self, con):
         return con
 
     def structure_var(self, con):
-        con.set("data_dir", self.data_dir())
-        con.set("cache_dir", self.cache_dir())
+        con.data_dir = self.data_dir()
+        con.cache_dir = self.cache_dir()
         return con
 
     def precision(self): # Number of bits used for data (optimize this to reduced memory load)
         return 32
 
-    def missing_value_code(self): # Alternative name for missing values (supplied to Pandas)
+    def dtypes(self): # Type for each column in the original csv to be loaded by Pandas
         raise NotImplementedError()
+
+    def missing_value_code(self): # Alternative name for missing values (supplied to Pandas)
+        return None
+
+    def imputation_method(self): # Method for imputing missing numerical values
+        return "mean"
 
     def from_cache(self): # Whether or not to load reused data with pickle
         return True
@@ -52,7 +59,7 @@ class DataVariables(Container):
         raise NotImplementedError()
 
     def categorical_feature_fields(self): # Feature columns to be treated as categorical
-        raise NotImplementedError()
+        return []
 
     def features_filename(self): # Name of file containing feature data
         raise NotImplementedError()
@@ -73,18 +80,20 @@ class SpatialDataVariables(DataVariables):
         super(SpatialDataVariables, self).__init__()
 
     def loading_var(self, con):
-        con.set("precision", self.precision())
-        con.set("missing_value_code", self.missing_value_code())
-        con.set("feature_fields", self.feature_fields())
-        con.set("categorical_fields", self.categorical_feature_fields())
-        con.set("spatial_label_field", self.spatial_label_field())
-        con.set("original_text_filename", self.features_filename())
-        con.set("original_spatial_labels_text_filename", self.spatial_labels_filename())
+        con.precision = self.precision()
+        con.dtypes = self.dtypes()
+        con.feature_fields = self.feature_fields()
+        con.categorical_fields = self.categorical_feature_fields()
+        con.spatial_label_field = self.spatial_label_field()
+        con.original_text_filename = self.features_filename()
+        con.original_spatial_labels_text_filename = self.spatial_labels_filename()
+        con.missing_value_code = self.missing_value_code()
+        con.imputation_method = self.imputation_method()
         return con
 
     def partitioning_var(self, con):
         spatial_selections, partitions = self.spatial_partition()
-        con.set("spatial_selection", ["all"])
+        con.spatial_selection = ["all"]
         con.set("spatial_selection", spatial_selections, partitions, multi_value=True)
         return con
 
@@ -111,6 +120,12 @@ class SpatialDataVariables(DataVariables):
             selections = DataSelection().selections_from_split(spatial_labels, self.spatial_split())
         return selections, self.partitions()
 
+    def dtypes(self): # Type for each column in the original csv to be loaded by Pandas
+        return util.merge_dicts(
+            {self.spatial_label_field(): str}, 
+            util.to_dict(self.categorical_feature_fields(), str, repeat=True)
+        )
+
 
 class TemporalDataVariables(DataVariables):
 
@@ -118,20 +133,28 @@ class TemporalDataVariables(DataVariables):
         super(TemporalDataVariables, self).__init__()
 
     def loading_var(self, con):
-        con.set("precision", self.precision())
-        con.set("missing_value_code", self.missing_value_code())
-        con.set("feature_fields", self.feature_fields())
-        con.set("categorigcal_fields", self.categorical_feature_fields())
-        con.set("temporal_label_field", self.temporal_label_field())
-        con.set("original_text_filename", self.features_filename())
-        con.set("original_temporal_labels_text_filename", self.temporal_labels_filename())
+        con.precision = self.precision()
+        con.dtypes = self.dtypes()
+        con.feature_fields = self.feature_fields()
+        con.categorigcal_fields = self.categorical_feature_fields()
+        con.temporal_label_field = self.temporal_label_field()
+        con.temporal_label_format = self.temporal_label_format()
+        con.temporal_seasonality_period = self.temporal_seasonality_period()
+        con.temporal_resolution = self.temporal_resolution()
+        con.original_text_filename = self.features_filename()
+        con.original_temporal_labels_text_filename = self.temporal_labels_filename()
+        con.missing_value_code = self.missing_value_code()
+        con.imputation_method = self.imputation_method()
         return con
 
     def partitioning_var(self, con):
         temporal_selections, partitions = self.temporal_partition()
-        con.set("temporal_selection", ["all"])
+        con.temporal_selection = ["all"]
         con.set("temporal_selection", temporal_selections, partitions, multi_value=True)
         return con
+
+    def imputation_method(self): # Method for imputing missing numerical values
+        return "periodic-mean"
 
     def temporal_label_field(self): # Name of column containing labels for all temporal elements
         raise NotImplementedError()
@@ -165,6 +188,12 @@ class TemporalDataVariables(DataVariables):
             selections = DataSelection().selections_from_split(temporal_labels, self.temporal_split())
         return selections, self.partitions()
 
+    def dtypes(self): # Type for each column in the original csv to be loaded by Pandas
+        return util.merge_dicts(
+            {self.temporal_label_field(): str}, 
+            util.to_dict(self.categorical_feature_fields(), str, repeat=True)
+        )
+
 
 class SpatiotemporalDataVariables(SpatialDataVariables, TemporalDataVariables):
 
@@ -172,29 +201,34 @@ class SpatiotemporalDataVariables(SpatialDataVariables, TemporalDataVariables):
         super(SpatiotemporalDataVariables, self).__init__()
 
     def loading_var(self, con):
-        con.set("precision", self.precision())
-        con.set("missing_value_code", self.missing_value_code())
-        con.set("feature_fields", self.feature_fields())
-        con.set("categorical_fields", self.categorical_feature_fields())
-        con.set("spatial_label_field", self.spatial_label_field())
-        con.set("temporal_label_field", self.temporal_label_field())
-        con.set("temporal_label_format", self.temporal_label_format())
-        con.set("temporal_seasonality_period", self.temporal_seasonality_period())
-        con.set("temporal_resolution", self.temporal_resolution())
-        con.set("shape", self.shape())
-        con.set("original_text_filename", self.features_filename())
-        con.set("original_spatial_labels_text_filename", self.spatial_labels_filename())
-        con.set("original_temporal_labels_text_filename", self.temporal_labels_filename())
+        con.precision = self.precision()
+        con.dtypes = self.dtypes()
+        con.feature_fields = self.feature_fields()
+        con.categorical_fields = self.categorical_feature_fields()
+        con.spatial_label_field = self.spatial_label_field()
+        con.temporal_label_field = self.temporal_label_field()
+        con.temporal_label_format = self.temporal_label_format()
+        con.temporal_seasonality_period = self.temporal_seasonality_period()
+        con.temporal_resolution = self.temporal_resolution()
+        con.shape = self.shape()
+        con.original_text_filename = self.features_filename()
+        con.original_spatial_labels_text_filename = self.spatial_labels_filename()
+        con.original_temporal_labels_text_filename = self.temporal_labels_filename()
+        con.missing_value_code = self.missing_value_code()
+        con.imputation_method = self.imputation_method()
         return con
 
     def partitioning_var(self, con):
         spatial_selections, partitions = self.spatial_partition()
-        con.set("spatial_selection", ["all"])
+        con.spatial_selection = ["all"]
         con.set("spatial_selection", spatial_selections, partitions, multi_value=True)
         temporal_selections, partitions = self.temporal_partition()
-        con.set("temporal_selection", ["all"])
+        con.temporal_selection = ["all"]
         con.set("temporal_selection", temporal_selections, partitions, multi_value=True)
         return con
+
+    def imputation_method(self): # Method for imputing missing numerical values
+        return "periodic-mean"
 
     # Ordering of features which include one of:
     #   spatial-major: ["spatial", "temporal", "feature"]
@@ -205,6 +239,12 @@ class SpatiotemporalDataVariables(SpatialDataVariables, TemporalDataVariables):
     def features_filename(self):
         return "Spatiotemporal.csv.gz"
 
+    def dtypes(self): # Type for each column in the original csv to be loaded by Pandas
+        return util.merge_dicts(
+            {self.spatial_label_field(): str, self.temporal_label_field(): str}, 
+            util.to_dict(self.categorical_feature_fields(), str, repeat=True)
+        )
+
 
 class GraphDataVariables(DataVariables):
 
@@ -212,19 +252,21 @@ class GraphDataVariables(DataVariables):
         super(GraphDataVariables, self).__init__()
 
     def loading_var(self, con):
-        con.set("precision", self.precision())
-        con.set("missing_value_code", self.missing_value_code())
-        con.set("source_field", self.edge_source_field())
-        con.set("destination_field", self.edge_destination_field())
-        con.set("weight_field", self.edge_weight_field())
-        con.set("node_label_field", self.node_label_field())
-        con.set("original_text_filename", self.features_filename())
-        con.set("original_node_labels_text_filename", self.node_labels_filename())
+        con.precision = self.precision()
+        con.dtypes = self.dtypes()
+        con.source_field = self.edge_source_field()
+        con.destination_field = self.edge_destination_field()
+        con.weight_field = self.edge_weight_field()
+        con.node_label_field = self.node_label_field()
+        con.original_text_filename = self.features_filename()
+        con.original_node_labels_text_filename = self.node_labels_filename()
+        con.missing_value_code = self.missing_value_code()
+        con.imputation_method = self.imputation_method()
         return con
 
     def partitioning_var(self, con):
         node_selections, partitions = self.node_partition()
-        con.set("node_selection", ["all"])
+        con.node_selection = ["all"]
         con.set("node_selection", node_selections, partitions, multi_value=True)
         return con
 
@@ -259,3 +301,9 @@ class GraphDataVariables(DataVariables):
             node_labels = df[self.node_label_field()].to_numpy(str).reshape(-1)
             selections = DataSelection().selections_from_split(node_labels, self.node_split())
         return selections, self.partitions()
+
+    def dtypes(self): # Type for each column in the original csv to be loaded by Pandas
+        return util.merge_dicts(
+            {self.edge_source_field(): str, self.edge_destination_field(): str, self.node_label_field(): str}, 
+            util.to_dict(self.categorical_feature_fields(), str, repeat=True)
+        )

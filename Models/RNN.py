@@ -4,12 +4,13 @@ import torch
 
 import Utility as util
 from Container import Container
-from Models.Model import Model, RNNCell, TemporalMapper
+from Models.Model import Model, TemporalMapper
+from Models.Model import RNNCell
 from Models.Model import RNN_HyperparameterVariables
 from Models.Model import TemporalMapper_HyperparameterVariables
 
 
-class LSTM(Model):
+class RNN(Model):
 
     def __init__(
         self,
@@ -19,7 +20,7 @@ class LSTM(Model):
         rnn_kwargs={},
         mapper_kwargs={}, 
     ):
-        super(LSTM, self).__init__()
+        super(RNN, self).__init__()
         # Instantiate model layers
         self.enc = RNNCell(in_size, hidden_size, **rnn_kwargs)
         self.map = TemporalMapper(hidden_size, hidden_size, **mapper_kwargs)
@@ -45,7 +46,7 @@ class LSTM(Model):
         x, n_temporal_out = inputs["x"], inputs["n_temporal_out"]
         n_samples, n_temporal_in, n_spatial, in_size = x.shape
         if self.debug:
-            print(util.make_msg_block("LSTM Forward"))
+            print(util.make_msg_block("RNN Forward"))
         if self.debug:
             print("x =", x.shape)
             print(util.memory_of(x))
@@ -94,7 +95,7 @@ class LSTM(Model):
 def init(dataset, var):
     spatiotemporal = dataset.spatiotemporal
     hyp_var = var.models.get(model_name()).hyperparameters
-    model = LSTM(
+    model = RNN(
         spatiotemporal.misc.n_predictor,
         spatiotemporal.misc.n_response,
         hyp_var.hidden_size,
@@ -113,7 +114,7 @@ class HyperparameterVariables(Container):
     def __init__(self):
         self.hidden_size = 16
         self.rnn_kwargs = RNN_HyperparameterVariables()
-        self.rnn_kwargs.rnn_layer = "LSTM"
+        self.rnn_kwargs.rnn_layer = "RNN"
         self.mapper_kwargs = TemporalMapper_HyperparameterVariables()
 
 

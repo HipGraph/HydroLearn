@@ -1,8 +1,0 @@
-FROM_NODE,TO_NODE
-F,B
-I,F
-J,I
-K,I
-M,K
-N,B
-O,B

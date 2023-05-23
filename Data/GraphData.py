@@ -21,98 +21,105 @@ class GraphData(Container, DataSelection):
 class Original(GraphData, DataSelection):
 
     def __init__(self, var):
-        part_var = var.get("partitioning")
-        self.set(["edges", "weights"], self.load_edges_weights(var), multi_value=True)
-        self.set("node_labels", self.load_node_labels(var))
-        self.set("node_indices", self.indices_from_selection(self.get("node_labels"), ["all"]))
-        self.set("n_nodes", self.get("node_labels").shape[0])
-        self.set("edge_indices", self.edges_to_edge_indices(self.get("node_labels"), self.get("edges")))
-        self.set("coo_edge_indices", np.transpose(self.get("edge_indices")))
-        self.set("adjacency", edge_indices_to_adjacency(self.get("n_nodes"), self.get("edge_indices")))
-        self.set("nx_graph", nx.convert_matrix.from_numpy_matrix(self.get("adjacency")))
-        self.set(
-            "nx_graph", 
-            nx.from_pandas_adjacency(
-                pd.DataFrame(
-                    self.get("adjacency"), 
-                    index=self.get("node_labels"), 
-                    columns=self.get("node_labels")
-                ),
-                create_using=nx.DiGraph()
-            )
+        part_var = var.partitioning
+        self.edges, self.weights = self.load_edges_weights(var)
+        self.node_labels = self.load_node_labels(var)
+        self.node_indices = self.indices_from_selection(self.node_labels, ["all"])
+        self.edge_indices = edge_indices_from_selection(self.edges, self.weights, self.node_labels)
+        self.n_nodes = self.node_labels.shape[0]
+        self.n_edges = self.edges.shape[0]
+        self.edge_index = self.edges_to_edge_index(self.edges, self.node_labels)
+        self.coo_edge_index = np.transpose(self.edge_index)
+        self.A = edgelist_to_A(self.n_nodes, self.edge_index)
+        self.W = edgelist_to_W(self.n_nodes, self.edge_index, self.weights)
+        self.nx_graph = nx.from_pandas_adjacency(
+            pd.DataFrame(self.A, index=self.node_labels, columns=self.node_labels),
+            create_using=nx.DiGraph()
         )
-        node_indegree_map, node_outdegree_map = self.adjacency_to_node_degrees(
-            self.get("adjacency"), 
-            self.get("node_labels"), 
-            self.get("node_indices")
+        self.node_degree_map, self.node_indegree_map, self.node_outdegree_map = self.A_to_node_degree_maps(
+            self.A, self.node_labels
         )
-        self.set("node_indegree_map", node_indegree_map)
-        self.set("node_outdegree_map", node_outdegree_map)
-        for partition in part_var.get("partitions"):
+        for partition in part_var.partitions:
             self.set(
-                "node_indices", 
-                self.indices_from_selection(self.get("node_labels"), part_var.get("node_selection", partition)),
+                "node_indices",
+                self.indices_from_selection(self.node_labels, part_var.get("node_selection", partition)),
                 partition
             )
             self.set(
-                "node_labels", 
-                self.filter_axis(self.get("node_labels"), 0, self.get("node_indices", partition)), 
+                "node_labels",
+                self.filter_axis(self.node_labels, 0, self.get("node_indices", partition)),
+                partition
+            )
+            self.set("n_nodes", self.get("node_labels", partition).shape[0], partition)
+            self.set(
+                "A",
+                self.filter_axis(self.get("A"), [0, 1], self.get("node_indices", partition)),
                 partition
             )
             self.set(
-                "adjacency", 
-                self.filter_axis(self.get("adjacency"), [0, 1], self.get("node_indices", partition)), 
+                "W",
+                self.filter_axis(self.get("W"), [0, 1], self.get("node_indices", partition)),
                 partition
             )
-            self.set("edge_indices", adjacency_to_edge_indices(self.get("adjacency", partition)), partition)
             self.set(
-                "edges", 
-                np.reshape(
-                    self.filter_axis(
-                        self.get("node_labels", partition), 0, np.reshape(self.get("edge_indices", partition), -1)
-                    ), 
-                    self.get("edge_indices", partition).shape
+                "edge_indices", 
+                edge_indices_from_selection(
+                    self.edges, 
+                    self.weights, 
+                    self.get("node_labels", partition)
                 ), 
                 partition
             )
-            self.set("coo_edge_indices", np.transpose(self.get("edge_indices", partition)), partition)
-            self.set("coo_edge_labels", np.transpose(self.get("edges", partition)), partition)
             self.set(
-                "nx_graph", 
+                "edges", 
+                self.filter_axis(self.edges, 0, self.get("edge_indices", partition)), 
+                partition
+            )
+            self.set("weights", self.filter_axis(self.weights, 0, self.get("edge_indices", partition)), partition)
+            self.set(
+                "edge_index", 
+                self.edges_to_edge_index(self.get("edges", partition), self.get("node_labels", partition)), 
+                partition
+            )
+            self.set("n_edges", self.get("edges", partition).shape[0], partition)
+            self.set("coo_edge_index", np.transpose(self.get("edge_index", partition)), partition)
+            self.set("coo_edges", np.transpose(self.get("edges", partition)), partition)
+            self.set(
+                "nx_graph",
                 nx.from_pandas_adjacency(
                     pd.DataFrame(
-                        self.get("adjacency", partition), 
-                        index=self.get("node_labels", partition), 
+                        self.get("A", partition),
+                        index=self.get("node_labels", partition),
                         columns=self.get("node_labels", partition)
                     ),
                     create_using=nx.DiGraph()
-                ), 
+                ),
                 partition
             )
-            self.set(
-                "node_mask", 
-                self.indices_from_selection(self.get("node_labels", partition), ["all"]), 
-                partition
+#            self.set(
+#                "node_mask",
+#                self.indices_from_selection(self.get("node_labels", partition), ["all"]),
+#                partition
+#            )
+            node_degree_map, node_indegree_map, node_outdegree_map = self.A_to_node_degree_maps(
+                self.get("A", partition),
+                self.get("node_labels", partition)
             )
-            node_indegree_map, node_outdegree_map = self.adjacency_to_node_degrees(
-                self.get("adjacency"), 
-                self.get("node_labels", partition), 
-                self.get("node_indices", partition)
-            )
+            self.set("node_degree_map", node_degree_map, partition)
             self.set("node_indegree_map", node_indegree_map, partition)
             self.set("node_outdegree_map", node_outdegree_map, partition)
 
     def load_edges_weights(self, var):
-        load_var = var.get("loading")
-        struct_var = var.get("structure")
-        data_dir = struct_var.get("data_dir")
-        fname = load_var.get("original_text_filename")
-        src_field = load_var.get("source_field")
-        dst_field = load_var.get("destination_field")
-        weight_field = load_var.get("weight_field")
+        load_var = var.loading
+        struct_var = var.structure
+        data_dir = struct_var.data_dir
+        fname = load_var.original_text_filename
+        src_field = load_var.source_field
+        dst_field = load_var.destination_field
+        weight_field = load_var.weight_field
         path = os.sep.join([data_dir, fname])
-        df = pd.read_csv(path, dtype={src_field: str, dst_field: str})
-        edges = df[[src_field, dst_field]].to_numpy()
+        df = pd.read_csv(path, dtype=load_var.dtypes, na_values=load_var.missing_value_code)
+        edges = df[[src_field, dst_field]].astype(str).to_numpy()
         if weight_field is None:
             weights = np.ones(edges.shape[0])
         else:
@@ -120,44 +127,90 @@ class Original(GraphData, DataSelection):
         return [edges, weights]
 
     def load_node_labels(self, var):
-        load_var = var.get("loading")
-        struct_var = var.get("structure")
-        data_dir = struct_var.get("data_dir")
-        fname = load_var.get("original_node_labels_text_filename")
-        node_label_field = load_var.get("node_label_field")
+        load_var = var.loading
+        struct_var = var.structure
+        data_dir = struct_var.data_dir
+        fname = load_var.original_node_labels_text_filename
+        node_label_field = load_var.node_label_field
         path = os.sep.join([data_dir, fname])
-        if "missing_value_code" in load_var:
-            df = pd.read_csv(path, na_values=load_var.get("missing_value_code"))
-        else:
-            df = pd.read_csv(path)
+        df = pd.read_csv(path, dtype=load_var.dtypes, na_values=load_var.missing_value_code)
         node_labels = df[node_label_field].to_numpy().astype(str)
         return node_labels
 
-    def edges_to_edge_indices(self, node_labels, edges):
+    def edges_to_edge_index(self, edges, node_labels):
         edges_shape = edges.shape
         selection = ["literal"] + np.reshape(edges, -1).tolist()
-        edge_indices = np.reshape(self.indices_from_selection(node_labels, selection), edges_shape)
-        return edge_indices
+        edge_index = np.reshape(self.indices_from_selection(node_labels, selection), edges_shape)
+        return edge_index
 
-    def adjacency_to_node_degrees(self, adj, node_labels, node_indices):
+    def _A_to_node_degrees(self, A, node_labels, node_indices):
         node_indegree_map, node_outdegree_map = {}, {}
         for label, idx in zip(node_labels, node_indices):
-            node_indegree_map[label] = np.sum(adj[node_indices,idx])
-            node_outdegree_map[label] = np.sum(adj[idx,node_indices])
+            node_indegree_map[label] = np.sum(A[node_indices,idx])
+            node_outdegree_map[label] = np.sum(A[idx,node_indices])
         return node_indegree_map, node_outdegree_map
 
+    def A_to_node_degree_maps(self, A, node_labels):
+        node_degree_map, node_indegree_map, node_outdegree_map = {}, {}, {}
+        for i, node_label in enumerate(node_labels):
+            node_indegree_map[node_label] = np.sum(A[:,i] > 0)
+            node_outdegree_map[node_label] = np.sum(A[i,:] > 0)
+            node_degree_map[node_label] = node_indegree_map[node_label] + node_outdegree_map[node_label]
+        return node_degree_map, node_indegree_map, node_outdegree_map
 
-def adjacency_to_edge_indices(adj):
-    edge_indices = np.column_stack(np.where(adj != 0))
-    return edge_indices
+
+def edge_indices_from_selection(edges, weights, selection):
+    indices = []
+    if edges.shape[0] == 2: # edges.shape=(2, |E|)
+        for i in range(edges.shape[1]):
+            if edges[0,i] in selection and edges[1,i] in selection:
+                indices.append(i)
+        indices = np.array(indices, dtype=int)
+        selected_edges = edges[:,indices]
+    elif edges.shape[1] == 2: # edges.shape=(|E|, 2)
+        for i in range(edges.shape[0]):
+            if edges[i,0] in selection and edges[i,1] in selection:
+                indices.append(i)
+        indices = np.array(indices, dtype=int)
+    else:
+        raise NotImplementedError(edge.shape)
+    return indices
 
 
-def edge_indices_to_adjacency(n, edge_indices):
-    adj = np.zeros((n, n), dtype=int)
-    for i in range(edge_indices.shape[0]):
-        src_idx, dst_idx = edge_indices[i][0], edge_indices[i][1]
-        adj[src_idx, dst_idx] = 1
-    return adj
+def edgelist_to_A(n, edge_index, weights=None):
+    A = np.zeros((n, n))
+    A[edge_index[:,0],edge_index[:,1]] = 1
+    return A
+
+
+def edgelist_to_W(n, edge_index, weights):
+    W = np.zeros((n, n))
+    W[edge_index[:,0],edge_index[:,1]] = weights
+    return W
+
+
+def A_to_edgelist(A, labels=None):
+    src, dst = np.where(A == 1)
+    edgelist = []
+    for _src, _dst in zip(src, dst):
+        if labels is None:
+            edge = [_src, _dst]
+        else:
+            edge = [labels[_src], labels[_dst]]
+        edgelist.append(edge)
+    return edgelist
+
+
+def W_to_edgelist(W, labels=None):
+    src, dst = np.where(W > 0)
+    edgelist = []
+    for _src, _dst in zip(src, dst):
+        if labels is None:
+            edge = [_src, _dst, W[_src,_dst]]
+        else:
+            edge = [labels[_src], labels[_dst], W[_src,_dst]]
+        edgelist.append(edge)
+    return edgelist
 
 
 if __name__ == "__main__":

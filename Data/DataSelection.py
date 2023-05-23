@@ -3,7 +3,7 @@ import numpy as np
 
 class DataSelection:
 
-    selection_modes = ["interval", "range", "literal", "all"]
+    selection_modes = ["interval", "range", "random", "random-split", "ordered-split", "literal", "all"]
 
     def selection_implemented(self, selection):
         mode = selection[0]
@@ -51,11 +51,19 @@ class DataSelection:
         if mode == "interval":
             interval = selection[1:]
         elif mode == "range":
-            interval = selection[1:2]
+            interval = selection[1:3]
         elif mode == "literal":
             interval = selection[[1, -1]]
+        elif mode == "random":
+            interval = [str(selection[1]), str(selection[1])]
+        elif mode == "random-split":
+            interval = [str(i) for i in selection[1:3]]
+        elif mode == "ordered-split":
+            interval = [str(i) for i in selection[1:3]]
         elif mode == "all":
             interval = ["all", "all"]
+        else:
+            raise NotImplementedError(selection)
         return interval
 
     def indices_from_selection(self, labels, selection):
@@ -67,7 +75,45 @@ class DataSelection:
                 end_idx = np.where(labels == str(selection[2]))[0][0]
                 indices = np.arange(start_idx, end_idx+1)
             elif mode == "range":
-                indices = np.arange(int(selection[1]), int(selection[2])+1, int(selection[3]))
+                start, end, step = selection[1:]
+                if start < 0:
+                    start += len(labels) 
+                if end < 0:
+                    end += len(labels) 
+                indices = np.arange(start, end, step)
+            elif mode == "random":
+                k = selection[1]
+                if isinstance(k, float):
+                    k = round(k * len(labels))
+                rng = np.random.default_rng()
+                if len(selection) > 2:
+                    rng = np.random.default_rng(selection[2])
+                indices = rng.choice(len(labels), k, replace=False)
+            elif mode == "random-split":
+                start, end = selection[1:3]
+                if isinstance(start, float):
+                    start = int(start * len(labels))
+                elif not isinstance(start, int):
+                    raise ValueError()
+                if isinstance(end, float):
+                    end = int(end * len(labels))
+                elif not isinstance(end, int):
+                    raise ValueError()
+                rng = np.random.default_rng()
+                if len(selection) > 3:
+                    rng = np.random.default_rng(selection[3])
+                indices = rng.permutation(len(labels))[start:end]
+            elif mode == "ordered-split":
+                start, end = selection[1:3]
+                if isinstance(start, float):
+                    start = int(start * len(labels))
+                elif not isinstance(start, int):
+                    raise ValueError(selection)
+                if isinstance(end, float):
+                    end = int(end * len(labels))
+                elif not isinstance(end, int):
+                    raise ValueError(selection)
+                indices = np.arange(len(labels))[start:end]
             elif mode == "literal":
                 indices = np.array([np.where(labels == str(i))[0][0] for i in selection[1:]])
             elif mode == "all":
@@ -91,14 +137,16 @@ class DataSelection:
     #   indices - the array of locations at which to pull values from data along the given axis
     # Requirements:
     #   1. axis - integer
-    #   2. indices - ndarray
+    #   2. indices - int or ndarray
     def __filter_axis(self, data, axis, indices):
         if not isinstance(axis, int):
             raise ValueError("Axis must be an integer, received %s" % (type(axis)))
-        elif not isinstance(indices, np.ndarray):
-            raise ValueError("Filter index set must be a NumPy.ndarray, received %s" % (type(indices)))
-#        elif len(indices) == 0:
-#            return data
+        if not isinstance(indices, (int, np.int32, np.int64, np.ndarray)):
+            raise ValueError("Filter index set must be int or NumPy.ndarray, received %s" % (type(indices)))
+        if isinstance(indices, np.ndarray) and len(indices) == 0:
+            new_shape = list(data.shape)
+            new_shape[axis] = 0
+            return np.empty(new_shape)
         return np.take(data, indices, axis)
 
     # Description:
@@ -167,6 +215,19 @@ class DataSelection:
 
     def filter_axes(self, data, axes, indices):
         return self.__filter_axes(data, axes, indices)
+    
+    def __filter_axis_foreach(self, data, axis, indices):
+        if isinstance(data, dict):
+            data = {key: self.__filter_axis(value, axis, indices) for key, value in data.items()}
+        elif isinstance(data, list):
+            data = [self.__filter_axis(value, axis, indices) for value in data]
+        else:
+            raise NotImplementedError("Unknown type (%s) for data in __filter_axis_foreach()" % (str(type))) 
+        return data
+    
+    def filter_axis_foreach(self, data, axis, indices):
+        data = self.__filter_axis_foreach(data, axis, indices)
+        return data
 
     def get_reduced_temporal_indices(self, temporal_selection, reduced_temporal_labels, reduced_n_temporal):
         mode = temporal_selection[0]

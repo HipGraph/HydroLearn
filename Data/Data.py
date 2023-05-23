@@ -28,21 +28,21 @@ class Data(Container, DataSelection):
     def init_dataset(self, dataset, var, con=None):
         if con is None: con = Container()
         spatiotemporal, spatial, temporal, graph = Container(), Container(), Container(), Container()
-        if not var.datasets.get(dataset).spatiotemporal.is_empty():
-            init_var = pull_init_var(var, dataset, "spatiotemporal")
-            spatiotemporal = SpatiotemporalData(init_var)
-        if not var.datasets.get(dataset).spatial.is_empty():
+        if var.meta.load_spatial and not var.datasets.get(dataset).spatial.is_empty():
             init_var = pull_init_var(var, dataset, "spatial")
             spatial = SpatialData(init_var)
-        if not var.datasets.get(dataset).temporal.is_empty():
+        if var.meta.load_temporal and not var.datasets.get(dataset).temporal.is_empty():
             init_var = pull_init_var(var, dataset, "temporal")
             temporal = TemporalData(init_var)
-        if not var.datasets.get(dataset).graph.is_empty():
+        if var.meta.load_spatiotemporal and not var.datasets.get(dataset).spatiotemporal.is_empty():
+            init_var = pull_init_var(var, dataset, "spatiotemporal")
+            spatiotemporal = SpatiotemporalData(init_var)
+        if var.meta.load_graph and not var.datasets.get(dataset).graph.is_empty():
             init_var = pull_init_var(var, dataset, "graph")
             graph = GraphData(init_var)
-        con.set("spatiotemporal", spatiotemporal)
         con.set("spatial", spatial)
         con.set("temporal", temporal)
+        con.set("spatiotemporal", spatiotemporal)
         con.set("graph", graph)
         return con
 

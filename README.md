@@ -2,19 +2,9 @@
 ## Author(s): Nicholas Majeske
 ## Contact: nmajeske@iu.edu
 
-## Requirements
-Required packages are provided for conda environment setup or pip installation in environment.yml and requirements.txt respectively. Users may issue one of the following commands to install all dependencies for HydroLearn:
-```bash
-conda env create --file environment.yml
-pip install -r requirements.txt
-```
-Users who wish to create an Anaconda environment with a specific name may find the following commmand useful:
-```bash
-conda create --name <env_name> --file requirements.txt
-```
 
 ## Cloning
-This repository contains submodules and will require the user to clone each before HydroLearn is operational. This repository and all submodules may be cloned at once using the --recurse-submodules flag. See examples below:
+HydroLearn contains submodules (other repositories) which must be cloned for full functionality. This repository and all submodules may be cloned at once using the --recurse-submodules flag. See examples below:
 ```bash
 git clone https://github.com/HipGraph/HydroLearn_Dev.git --recurse-submodules
 ```
@@ -22,48 +12,20 @@ git clone https://github.com/HipGraph/HydroLearn_Dev.git --recurse-submodules
 git clone git@github.com:HipGraph/HydroLearn_Dev.git --recurse-submodules
 ```
 
+## Environment
+HydroLearn and its dependencies are best handled using Anaconda and Pip. The script Setup.py is meant to install all dependencies and integrate (correct import statements, etc) of all submodules. First, users will need to create their conda environment:
+```bash
+conda create -n HydroLearn python=3.9
+```
+Once created, activate this environment and install/integrate all dependencies using the following:
+```bash
+conda activate HydroLearn
+python Setup.py install_dependencies <pytorch_version(1.12.0)> <cuda_version(11.3)>
+python Setup.py integrate_submodules
+```
+Setup.py dependency installation defaults to PyTorch and Cuda versions 1.12.0 and 11.3 but may be called with different versions supplied as second and third arguments. HydroLearn is implemented in the default versions and conflicts are likely to arise with other PyTorch and Cuda versions.
+
 ## Working with HydroLearn
-### Containers
-To maintain flexibility and manage the namespace, HydroLearn relies heavily on the Container class to store runtime data. Simply put, containers are python dictionaries with added functionality. Specifically, this added functionality facilitates the creation of hierarchical data structures with built-in partitioning. Below are just a few examples of working with the Container class:
-##### Basic Variables
-```python
-# Basic operations for var "a" with value 1
-con = Container()
-con.set("a", 1)
-a = con.get("a")
-con.rem("a")
-```
-##### Partitioned Variables
-```python
-# Basic operations for var "a" with value 1 under partition "train"
-con = Container()
-con.set("a", 1, partition="train")
-train_a = con.get("a", partition="train")
-con.rem("a", "train"
-```
-##### Hierarchical Variables
-```python
-# Basic operations for var "a" with value 1 under partition "train" in child container "child"
-con = Container()
-con.set("a", 1, partition="train", context="child")
-train_a = con.get("a", partition="train", context="child")
-con.rem("a", partition="train", context="child")
-```
-##### Macro Operations
-```python
-con = Container()
-con.set(["a", "b"], 1, "train") # Vars with same value & partition
-a, b = con.get(["a", "b"], "train")
-con.rem(["a", "b"], "train")
-con.set(["a", "b"], 1, ["train", "test"]) # Vars with same value but different partitions
-a, b = con.get(["a", "b"], ["train", "test"])
-con.rem(["a", "b"], ["train", "test"])
-con.set("a", 1, "*") # Var with any existing partition
-a_vals = con.get("a", "*")
-con.rem("a", "*")
-```
-##### Container Demo
-![Example usage of the Container class and the resulting data structure](./Demo.png)
 ### Quick Invocation
 HydroLearn may be executed simply by invoking the Execute script:
 ```bash
@@ -73,7 +35,7 @@ This will execute HydroLearn using all default settings defined in Variables.py.
 ```bash
 python Execute.py --training:train true --evaluation:evaluate true --evaluation:evaluated_checkpoint \"Best\"
 ```
-This invocation executes HydroLearn in train and evaluation modes and evaluates the model by checkpoint name "Best". HydroLearn employs a custom argument parser (implemented in Arguments.py) to convert command-line arguments to an equivalent Container instance. As such, it also employs a custom command-line argument syntax which is defined below. The example command-line arguments given above will be parsed into a container object of the following structure:
+This invocation executes HydroLearn in train and evaluation modes and evaluates the model by checkpoint name "Best". HydroLearn uses a custom argument parser (implemented in Arguments.py) to convert command-line arguments to an equivalent Container (more on Containers below) instance. This parser uses a custom command-line argument syntax which is defined below. The example command-line arguments given above will be parsed into a container object of the following structure:
 ```python
 -> training
     train = True
@@ -100,12 +62,57 @@ Manually entering command-line arguments is time consuming and impractical for c
 ```bash
 python Driver.py --E \"MyExperiments\" --e 1
 ```
-Here --E specifies the experiment module and --e specifies the experiment of that module to execute. Consider using the example module Experimentation/ExperimentTemplate.py to get started.
+Here --E specifies the experiment module and --e specifies the experiment of that module to execute. Consider using the example module Experimentation/ExperimentTemplate.py to get started. Users may wish to view the argument sets of their experiment without execution of the pipeline. This may be achieved by the following command:
+```bash
+python Driver.py --E \"MyExperiments\" --e 1 --driver:debug true
+```
+
 #### Analysis Design and Execution
 It is common for the results of an experiment to require some form of processing to produce a final product (plots, tables, etc). To this end, the Analysis package allows users to define all post-processing routines for an experiment as a module. With an analysis module Analysis/MyAnalysis.py, Driver.py can execute all post-processing routines for an experiment using:
 ```bash
 python Driver.py --A \"MyAnalysis\" --a 1
 ```
+### Containers
+To maintain flexibility and manage the namespace, HydroLearn relies heavily on the Container class to store runtime data. Simply put, containers are python dictionaries with added functionality. Specifically, this added functionality facilitates the creation of hierarchical data structures with built-in partitioning. Below are just a few examples of working with the Container class:
+##### Basic Variables
+```python
+# Basic operations for var "a" with value 1
+con = Container()
+con.set("a", 1)
+a = con.get("a")
+con.rem("a")
+```
+##### Partitioned Variables
+```python
+# Basic operations for var "a" with value 1 under partition "train"
+con = Container()
+con.set("a", 1, partition="train")
+train_a = con.get("a", partition="train")
+con.rem("a", "train")
+```
+##### Hierarchical Variables
+```python
+# Basic operations for var "a" with value 1 under partition "train" in child container "child"
+con = Container()
+con.set("a", 1, partition="train", context="child")
+train_a = con.get("a", partition="train", context="child")
+con.rem("a", partition="train", context="child")
+```
+##### Macro Operations
+```python
+con = Container()
+con.set(["a", "b"], 1, "train") # Vars with same value & partition
+a, b = con.get(["a", "b"], "train")
+con.rem(["a", "b"], "train")
+con.set(["a", "b"], 1, ["train", "test"]) # Vars with same value but different partitions
+a, b = con.get(["a", "b"], ["train", "test"])
+con.rem(["a", "b"], ["train", "test"])
+con.set("a", 1, "*") # Var with any existing partition
+a_vals = con.get("a", "*")
+con.rem("a", "*")
+```
+##### Container Demo
+![Example usage of the Container class and the resulting data structure](./Demo.png)
 Here --A specifies the analysis module and --a specifies the post-processing routine of that module to execute. Consider using the example module Analysis/AnalysisTemplate.py to get started.
 ### Data Integration
 In order to feed new data into HydroLearn, users will need to complete the following steps:

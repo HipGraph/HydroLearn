@@ -1,8 +1,10 @@
 import sys
+import os
 import re
 import json
 import warnings
-from os import sep as os_sep
+import numpy as np
+
 from Container import Container
 
 
@@ -31,7 +33,7 @@ class ArgumentParser:
         if con is None: con = Container()
         if not isinstance(argv, list) or len(argv) % 2 != 0:
             raise ValueError(
-                "Arguments must be a list (sys.argv) and contain No. elements, received %s" % (
+                "Arguments must be a list (sys.argv) and contain an even number of elements, received %s" % (
                     str(argv)
                 )
             )
@@ -61,12 +63,24 @@ class ArgumentParser:
         return con
 
 
+class NumPyEncoder(json.JSONEncoder):
+
+    def default(self, value):
+        if isinstance(value, np.integer):
+            return int(value)
+        elif isinstance(value, np.floating):
+            return float(value)
+        elif isinstance(value, np.ndarray):
+            return value.tolist()
+        return super(NpEncoder, self).default(value)
+
+
 class ArgumentBuilder:
 
     def __init__(self): pass
 
     def build_argvalue(self, value):
-        return json.dumps(value)
+        return json.dumps(value, cls=NumPyEncoder)
 
     def build_argname(self, name, partition=None, path=None):
         partition_str = ("" if partition is None else "%s%s" % (partition, partition_sep))
