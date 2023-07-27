@@ -30,6 +30,8 @@ def confusion_matrix(y, yhat, **kwargs):
     n_classes = len(classes)
     shape = (n_classes, n_classes)
     if not axis is None:
+        if isinstance(axis, int):
+            axis = (axis,)
         shape += tuple(np.take(y.shape, util.list_subtract(list(range(y.ndim)), list(axis))))
     if debug:
         print("axis =", axis)
@@ -352,7 +354,7 @@ def mean_absolute_percentage_error(y, yhat, **kwargs):
         yhat = np.copy(yhat)
         yhat[~mask] = y[~mask]
     # Compute
-    return np.mean(np.minimum(np.abs((y - yhat) / np.maximum(np.abs(y), eps)), 100), axis)
+    return np.mean(100 * np.minimum(np.abs((y - yhat) / np.maximum(np.abs(y), eps)), 1), axis)
 
 
 def root_mean_square_error(y, yhat, **kwargs):
