@@ -6,6 +6,7 @@ import importlib
 from progressbar import ProgressBar
 
 import Utility as util
+import Evaluation
 from Plotting import Plotting
 from Variables import Variables
 from Arguments import ArgumentParser, ArgumentBuilder
@@ -566,7 +567,7 @@ class Pipeline:
 
     def quantify_prediction_accuracy(self):
         # Unpack the variables
-        exec_var, dbg_var = self.exec_var, self.dbg_var
+        exec_var, eval_var, dbg_var = self.exec_var, self.eval_var, self.dbg_var
         # Unpack the data
         train_Y, valid_Y, test_Y = self.train_Y, self.valid_Y, self.test_Y
         train_Y_gtmask, valid_Y_gtmask, test_Y_gtmask = self.train_Y_gtmask, self.valid_Y_gtmask, self.test_Y_gtmask
@@ -575,164 +576,39 @@ class Pipeline:
         valid_spatmp, valid_spa, valid_graph = self.valid_spatmp, self.valid_spa, self.valid_graph
         test_spatmp, test_spa, test_graph = self.test_spatmp, self.test_spa, self.test_graph
         # Calculate NRMSE for each spatial element
-        if exec_var.principle_data_type == "spatial":
-            # Pull minimums
-            train_mins = train_spa.filter_axis(train_spa.statistics.minimums, -1, train_spa.misc.response_indices)
-            valid_mins = valid_spa.filter_axis(valid_spa.statistics.minimums, -1, valid_spa.misc.response_indices)
-            test_mins = test_spa.filter_axis(test_spa.statistics.minimums, -1, test_spa.misc.response_indices)
-            # Pull maximums
-            train_maxes = train_spa.filter_axis(train_spa.statistics.maximums, -1, train_spa.misc.response_indices)
-            valid_maxes = valid_spa.filter_axis(valid_spa.statistics.maximums, -1, valid_spa.misc.response_indices)
-            test_maxes = test_spa.filter_axis(test_spa.statistics.maximums, -1, test_spa.misc.response_indices)
-            # Pull means
-            train_means = train_spa.filter_axis(train_spa.statistics.means, -1, train_spa.misc.response_indices)
-            valid_means = valid_spa.filter_axis(valid_spa.statistics.means, -1, valid_spa.misc.response_indices)
-            test_means = test_spa.filter_axis(test_spa.statistics.means, -1, test_spa.misc.response_indices)
-            # Reshape
-            train_Y, train_Yhat = train_Y[None,None,:,:], train_Yhat[None,None,:,:]
-            valid_Y, valid_Yhat = valid_Y[None,None,:,:], valid_Yhat[None,None,:,:]
-            test_Y, test_Yhat = test_Y[None,None,:,:], test_Yhat[None,None,:,:]
-            train_mins, valid_mins, test_mins = train_mins[None,None,:], valid_mins[None,None,:], test_mins[None,None,:]
-            train_maxes, valid_maxes, test_maxes = train_maxes[None,None,:], valid_maxes[None,None,:], test_maxes[None,None,:]
-            train_means, valid_means, test_means = train_means[None,None,:], valid_means[None,None,:], test_means[None,None,:]
-        elif exec_var.principle_data_type == "temporal":
-            raise NotImplementedError()
-        elif exec_var.principle_data_type == "spatiotemporal":
-            if exec_var.principle_data_form == "original":
-                # Pull minimums
-                train_mins = train_spatmp.filter_axis(
-                    train_spatmp.statistics.minimums,
-                    [-2, -1],
-                    [train_spatmp.original.get("spatial_indices", "train"), train_spatmp.misc.response_indices]
-                )
-                valid_mins = valid_spatmp.filter_axis(
-                    valid_spatmp.statistics.minimums,
-                    [-2, -1],
-                    [valid_spatmp.original.get("spatial_indices", "valid"), valid_spatmp.misc.response_indices]
-                )
-                test_mins = test_spatmp.filter_axis(
-                    test_spatmp.statistics.minimums,
-                    [-2, -1],
-                    [test_spatmp.original.get("spatial_indices", "test"), test_spatmp.misc.response_indices]
-                )
-                # Pull maximums
-                train_maxes = train_spatmp.filter_axis(
-                    train_spatmp.statistics.maximums,
-                    [-2, -1],
-                    [train_spatmp.original.get("spatial_indices", "train"), train_spatmp.misc.response_indices]
-                )
-                valid_maxes = valid_spatmp.filter_axis(
-                    valid_spatmp.statistics.maximums,
-                    [-2, -1],
-                    [valid_spatmp.original.get("spatial_indices", "valid"), valid_spatmp.misc.response_indices]
-                )
-                test_maxes = test_spatmp.filter_axis(
-                    test_spatmp.statistics.maximums,
-                    [-2, -1],
-                    [test_spatmp.original.get("spatial_indices", "test"), test_spatmp.misc.response_indices]
-                )
-                # Pull means
-                train_means = train_spatmp.filter_axis(
-                    train_spatmp.statistics.means,
-                    [-2, -1],
-                    [train_spatmp.original.get("spatial_indices", "train"), train_spatmp.misc.response_indices]
-                )
-                valid_means = valid_spatmp.filter_axis(
-                    valid_spatmp.statistics.means,
-                    [-2, -1],
-                    [valid_spatmp.original.get("spatial_indices", "valid"), valid_spatmp.misc.response_indices]
-                )
-                test_means = test_spatmp.filter_axis(
-                    test_spatmp.statistics.means,
-                    [-2, -1],
-                    [test_spatmp.original.get("spatial_indices", "test"), test_spatmp.misc.response_indices]
-                )
-            elif exec_var.principle_data_form == "reduced":
-                # Pull minimums
-                train_mins = train_spatmp.filter_axis(
-                    train_spatmp.reduced_statistics.minimums,
-                    [-2, -1],
-                    [train_spatmp.reduced.get("spatial_indices", "train"), train_spatmp.misc.response_indices]
-                )
-                valid_mins = valid_spatmp.filter_axis(
-                    valid_spatmp.reduced_statistics.minimums,
-                    [-2, -1],
-                    [valid_spatmp.reduced.get("spatial_indices", "valid"), valid_spatmp.misc.response_indices]
-                )
-                test_mins = test_spatmp.filter_axis(
-                    test_spatmp.reduced_statistics.minimums,
-                    [-2, -1],
-                    [test_spatmp.reduced.get("spatial_indices", "test"), test_spatmp.misc.response_indices]
-                )
-                # Pull maximums
-                train_maxes = train_spatmp.filter_axis(
-                    train_spatmp.reduced_statistics.maximums,
-                    [-2, -1],
-                    [train_spatmp.reduced.get("spatial_indices", "train"), train_spatmp.misc.response_indices]
-                )
-                valid_maxes = valid_spatmp.filter_axis(
-                    valid_spatmp.reduced_statistics.maximums,
-                    [-2, -1],
-                    [valid_spatmp.reduced.get("spatial_indices", "valid"), valid_spatmp.misc.response_indices]
-                )
-                test_maxes = test_spatmp.filter_axis(
-                    test_spatmp.reduced_statistics.maximums,
-                    [-2, -1],
-                    [test_spatmp.reduced.get("spatial_indices", "test"), test_spatmp.misc.response_indices]
-                )
-                # Pull means
-                train_means = train_spatmp.filter_axis(
-                    train_spatmp.reduced_statistics.means,
-                    [-2, -1],
-                    [train_spatmp.reduced.get("spatial_indices", "train"), train_spatmp.misc.response_indices]
-                )
-                valid_means = valid_spatmp.filter_axis(
-                    valid_spatmp.reduced_statistics.means,
-                    [-2, -1],
-                    [valid_spatmp.reduced.get("spatial_indices", "valid"), valid_spatmp.misc.response_indices]
-                )
-                test_means = test_spatmp.filter_axis(
-                    test_spatmp.reduced_statistics.means,
-                    [-2, -1],
-                    [test_spatmp.reduced.get("spatial_indices", "test"), test_spatmp.misc.response_indices]
-                )
-            else:
-                raise NotImplementedError("Unknown principle_data_form=\"%s\"" % (exec_var.principle_data_form))
-        elif exec_var.principle_data_type == "graph":
-            raise NotImplementedError()
-        else:
-            raise NotImplementedError()
         if not var.evaluating.mask_metrics:
             train_Y_gtmask, valid_Y_gtmask, test_Y_gtmask = None, None, None
-        train_NRMSEs = util.NRMSE(train_Y, train_Yhat, mins=train_mins, maxes=train_maxes, mask=train_Y_gtmask)
-        valid_NRMSEs = util.NRMSE(valid_Y, valid_Yhat, mins=valid_mins, maxes=valid_maxes, mask=valid_Y_gtmask)
-        test_NRMSEs = util.NRMSE(test_Y, test_Yhat, mins=test_mins, maxes=test_maxes, mask=test_Y_gtmask)
-        if dbg_var.print_spatial_errors:
-            print("train_NRMSEs =", train_NRMSEs.shape, "=")
-            for i in range(train_NRMSEs.shape[0]):
-                print(train_spatmp.original.get("spatial_labels", "train")[i], train_NRMSEs[i])
-            print("valid_NRMSEs =", valid_NRMSEs.shape, "=")
-            for i in range(valid_NRMSEs.shape[0]):
-                print(valid_spatmp.original.get("spatial_labels", "valid")[i], valid_NRMSEs[i])
-            print("test_NRMSEs =", test_NRMSEs.shape, "=")
-            for i in range(test_NRMSEs.shape[0]):
-                print(test_spatmp.original.get("spatial_labels", "test")[i], test_NRMSEs[i])
-        train_NRMSE = np.mean(train_NRMSEs)
-        valid_NRMSE = np.mean(valid_NRMSEs)
-        test_NRMSE = np.mean(test_NRMSEs)
-        if dbg_var.print_errors:
-            print(util.make_msg_block("Normalized Root Mean Square Error (NRMSE)", "+"))
-            print(util.make_msg_block("++++  Train  +++  Valid  +++  Test  +++++", "+"))
-            print(
-                util.make_msg_block(
-                    "++++ %.4f  +++ %.4f  +++ %.4f +++++" % (train_NRMSE, valid_NRMSE, test_NRMSE),
-                    "+"
+        eval_con = Evaluation.evaluate_datasets(
+            (train_Y, valid_Y, test_Y), (train_Yhat, valid_Yhat, test_Yhat), 
+            (self.train_dataset, self.test_dataset, self.test_dataset), exec_var.principle_data_type, 
+            ("train", "valid", "test"), eval_var.metrics
+        ) 
+        if eval_con.has("NRMSE", "train"):
+            train_NRMSE = np.mean(eval_con.get("NRMSE", "train"))
+            valid_NRMSE = np.mean(eval_con.get("NRMSE", "valid"))
+            test_NRMSE = np.mean(eval_con.get("NRMSE", "test"))
+            if dbg_var.print_errors:
+                print(util.make_msg_block("Normalized Root Mean Square Error (NRMSE)", "+"))
+                print(util.make_msg_block("++++  Train  +++  Valid  +++  Test  +++++", "+"))
+                print(
+                    util.make_msg_block(
+                        "++++ %.4f  +++ %.4f  +++ %.4f +++++" % (train_NRMSE, valid_NRMSE, test_NRMSE),
+                        "+"
+                    )
                 )
-            )
-        self.train_mins, self.valid_mins, self.test_mins = train_mins, valid_mins, test_mins
-        self.train_maxes, self.valid_maxes, self.test_maxes = train_maxes, valid_maxes, test_maxes
-        self.train_means, self.valid_means, self.test_means = train_means, valid_means, test_means
-
+        elif eval_con.has("ACC", "train"):
+            train_ACC = np.mean(eval_con.get("ACC", "train"))
+            valid_ACC = np.mean(eval_con.get("ACC", "valid"))
+            test_ACC = np.mean(eval_con.get("ACC", "test"))
+            if dbg_var.print_errors:
+                print(util.make_msg_block("+++++++++++++ Accuracy (ACC) ++++++++++++", "+"))
+                print(util.make_msg_block("++++  Train  +++  Valid  +++  Test  +++++", "+"))
+                print(
+                    util.make_msg_block(
+                        "++++ %.4f  +++ %.4f  +++ %.4f +++++" % (train_ACC, valid_ACC, test_ACC),
+                        "+"
+                    )
+                )
 
     def log_prediction_info(self):
         # Unpack the variables
@@ -746,44 +622,16 @@ class Pipeline:
         train_spatmp, train_spa, train_graph = self.train_spatmp, self.train_spa, self.train_graph
         valid_spatmp, valid_spa, valid_graph = self.valid_spatmp, self.valid_spa, self.valid_graph
         test_spatmp, test_spa, test_graph = self.test_spatmp, self.test_spa, self.test_graph
-        train_mins, valid_mins, test_mins = self.train_mins, self.valid_mins, self.test_mins
-        train_maxes, valid_maxes, test_maxes = self.train_maxes, self.valid_maxes, self.test_maxes
-        train_means, valid_means, test_means = self.train_means, self.valid_means, self.test_means
         # Curate prediction performance report
-        if exec_var.principle_data_type == "spatial":
-            train_Y, train_Yhat = train_Y[None,None,:,:], train_Yhat[None,None,:,:]
-            valid_Y, valid_Yhat = valid_Y[None,None,:,:], valid_Yhat[None,None,:,:]
-            test_Y, test_Yhat = test_Y[None,None,:,:], test_Yhat[None,None,:,:]
-        elif exec_var.principle_data_type == "temporal":
-            raise NotImplementedError()
-        train_kwargs = {"mins": train_mins, "maxes": train_maxes, "means": train_means}
-        valid_kwargs = {"mins": valid_mins, "maxes": valid_maxes, "means": valid_means}
-        test_kwargs = {"mins": test_mins, "maxes": test_maxes, "means": test_means}
-        if eval_var.mask_metrics: train_kwargs["mask"] = train_Y_gtmask
-        if eval_var.mask_metrics: valid_kwargs["mask"] = valid_Y_gtmask
-        if eval_var.mask_metrics: test_kwargs["mask"] = test_Y_gtmask
-        report = util.curate_performance_report(
-            [train_Y, valid_Y, test_Y],
-            [train_Yhat, valid_Yhat, test_Yhat],
-            ["train", "valid", "test"],
-            [
-                train_dataset.get(exec_var.principle_data_type).original.get("spatial_labels", "train"),
-                valid_dataset.get(exec_var.principle_data_type).original.get("spatial_labels", "valid"),
-                test_dataset.get(exec_var.principle_data_type).original.get("spatial_labels", "test")
-            ],
-            [
-                train_dataset.get(exec_var.principle_data_type).misc.spatial_label_field.capitalize(),
-                valid_dataset.get(exec_var.principle_data_type).misc.spatial_label_field.capitalize(),
-                test_dataset.get(exec_var.principle_data_type).misc.spatial_label_field.capitalize(),
-            ],
-            train_dataset.get(exec_var.principle_data_type).misc.response_features,
-            eval_var.metrics,
-            [train_kwargs, valid_kwargs, test_kwargs],
-        )
         path = os.sep.join([
             eval_dir,
             "Performance_Checkpoint[%s].txt" % (eval_var.evaluated_checkpoint.replace(".pth", ""))
         ])
+        report = Evaluation.curate_evaluation_report(
+            (train_Y, valid_Y, test_Y), (train_Yhat, valid_Yhat, test_Yhat), 
+            (train_dataset, test_dataset, test_dataset), exec_var.principle_data_type, 
+            ("train", "valid", "test"), eval_var.metrics
+        ) 
         with open(path, "w") as f:
             f.write(report)
         # Cache groundtruth and prediction data
@@ -922,16 +770,19 @@ def get_id(model, datasets, var):
 def adjust_predictions(Yhat, data, prediction_adjustment_map, default_adjustment):
     for i, feature in enumerate(data.misc.response_features):
         adjustment = prediction_adjustment_map.get(feature, default_adjustment)
-        if adjustment[0] == "identity":
-            Yhat = Yhat
-        elif adjustment[0] == "clip":
+        if adjustment is None or adjustment[0] == "identity":
+            continue
+        if adjustment[0] == "clip":
             a, b = float(adjustment[1]), float(adjustment[2])
             Yhat[...,i] = np.clip(Yhat[...,i], a, b)
         elif adjustment[0] == "binarize":
             comparator, value = adjustment[1:]
             Yhat[...,i] = util.comparator_fn_map[comparator](Yhat[...,i], value)
+        elif adjustment[0] == "round":
+            digits = adjustment[1]
+            Yhat[...,i] = np.round(Yhat[...,i], digits)
         else:
-            raise NotImplementedError()
+            raise NotImplementedError(adjustment)
     return Yhat
 
 

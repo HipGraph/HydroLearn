@@ -7,7 +7,6 @@ import pandas as pd
 import geopandas as gpd
 import numpy as np
 import shapefile
-#import NetworkProperties as netprop
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FormatStrFormatter, MaxNLocator
 from matplotlib.patches import Polygon
@@ -17,6 +16,7 @@ import matplotlib.patheffects as PathEffects
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import polylabel
 import networkx as nx
+
 import Utility as util
 from Container import Container
 
@@ -684,13 +684,16 @@ class Plotting(Container):
         self.legend()
         return self.lines
 
-    def plot_time_series(self, y, temporal_labels=None, ax=None, **kwargs):
+    def plot_time_series(self, x, y, temporal_labels=None, ax=None, **kwargs):
         if ax is None:
             ax = plt.gca()
-        self.plot_line(np.arange(len(y)), y)
+        if x is None:
+            x = range(len(y))
+        line = self.plot_line(x, y, ax=ax, **kwargs)
         if not temporal_labels is None:
             indices = np.linspace(0, len(temporal_labels)-1, 7, dtype=int)
-            self.xticks(indices, temporal_labels[indices], rotation=75)
+            self.xticks(indices, temporal_labels[indices], ax=ax, rotation=60)
+        return line
 
     def plot_line(self, x, y, ax=None, **kwargs):
         if x is None:
@@ -701,7 +704,7 @@ class Plotting(Container):
             {},
             kwargs,
         )
-        ax.plot(x, y, **kwargs)
+        return ax.plot(x, y, **kwargs)
 
     def plot_bar(self, x, y, ax=None, **kwargs):
         if ax is None:
@@ -893,24 +896,26 @@ class Plotting(Container):
         elif not labels is None:
             ax.legend(labels, **kwargs)
         else:
-            plt.legend(**kwargs)
+            ax.legend(**kwargs)
 
     def figure(self, size=(8, 8)):
-        plt.figure(figsize=size)
+        return plt.figure(figsize=size)
 
-    def save_figure(self, path, dpi=200):
-        plt.savefig(path, bbox_inches="tight", dpi=dpi)
+    def subplots(self, n=1, size=(8, 8)):
+        return plt.subplots(n, figsize=size)
+
+    def save_figure(self, path, dpi=200, fig=None):
+        if fig is None:
+            fig = plt
+        fig.savefig(path, bbox_inches="tight", dpi=dpi)
         plt.close()
-
 
     def show_figure(self):
         plt.show()
         plt.close()
 
-
     def close(self):
         plt.close()
-
 
     def plot_learning_curve(self, train, valid, test, path):
         plt.plot(train, color="k", label="Training", linewidth=self.line_width)

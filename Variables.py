@@ -57,7 +57,6 @@ class Variables(Container):
         con.set("dataset", dataset, "test")
         con.principle_data_type = "spatiotemporal"
         con.principle_data_form = "original"
-#        con.principle_data_form = "reduced"
         con.use_gpu = True
         con.gpu_data_mapping = "all"
         return con
@@ -80,9 +79,9 @@ class Variables(Container):
         return con
 
     def training_var(self, con):
-        con.n_epochs = 50
-        con.patience = -1
-        con.mbatch_size = 128
+        con.n_epochs = 100
+        con.patience = 10
+        con.mbatch_size = 64
         con.lr = 0.001
         con.lr_scheduler = None
         con.lr_scheduler_kwargs = {}
@@ -94,6 +93,7 @@ class Variables(Container):
         con.l2_reg = 0.0
         con.optimizer = "Adam"
         con.loss = "MSELoss"
+        con.loss_kwargs = {}
         con.initializer = None
         con.initialization_seed = 0
         con.batch_shuffle_seed = 0
@@ -105,7 +105,7 @@ class Variables(Container):
         con.evaluation_dir = "Evaluations"
         con.evaluated_checkpoint = "Best.pth"
         con.method = "direct"
-        con.metrics = "*"
+        con.metrics = "regression"
         con.mask_metrics = True
         con.cache = False
         con.cache_partitions = ["train", "valid", "test"]
@@ -153,7 +153,7 @@ class Variables(Container):
     def models_var(self, con):
         # Match modules named by one or more: digits, characters, underscores, and/or dashes
         path_regex = "(?=[0-9a-zA-Z_-]+\.py)"
-        exclusions = ["Model", "ModelTemplate", "Utility", "__init__"] + ["STemGNN", "Radflow", "GEOMAN", "ARIMA"]
+        exclusions = ["Model", "ModelTemplate", "Utility", "Trainer", "__init__"] + ["STemGNN", "Radflow", "GEOMAN", "ARIMA"]
         for excl in exclusions:
             path_regex += "(?!%s\.py)" % (excl)
         module_paths = util.get_paths("Models", path_regex)

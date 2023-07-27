@@ -192,7 +192,7 @@ class Container:
         return any(checks)
 
     # Public copy method: implements all macro copy operations
-    def copy(self, con):
+    def copy(self, con, overwrite=True):
         bad_type = True
         if isinstance(con, list):
             bad_type = any([not isinstance(_con, Container) for _con in con])
@@ -202,14 +202,16 @@ class Container:
             raise ValueError("Item for copying must be a Container, list of Containers, or None")
         if isinstance(con, list):
             for _con in con:
-                self.__copy(_con)
+                self.__copy(_con, overwrite)
         elif isinstance(con, Container):
-            self.__copy(con)
+            self.__copy(con, overwrite)
         return self
 
     # Private copy method: copies all variables of the given container into this one
-    def __copy(self, con):
+    def __copy(self, con, overwrite=True):
         for name, value, partition in con.get_name_value_partitions():
+            if self.var_exists(name, partition) and not overwrite:
+                continue
             if isinstance(value, Container): # copy a container
                 self.__set(name, Container().__copy(value), partition)
             elif not self.is_reserved(name): # copy a single var
@@ -232,10 +234,10 @@ class Container:
         return con
 
     # Merge combines all vars of this and the given container
-    def merge(self, con, recurse_surface_var=True):
+    def merge(self, con, recurse_surface_var=True, coincident_only=True):
         if recurse_surface_var:
             self.merge_surface_var(con)
-        self.merge_containers(con)
+        self.merge_containers(con, coincident_only)
         return self
 
     # Merges all surface variables: those not in a descendant container
@@ -250,7 +252,7 @@ class Container:
         return self
 
     # Merges all non-surface variables: those in descendant containers
-    def merge_containers(self, con, in_recursion=False):
+    def merge_containers(self, con, coincident_only=True, in_recursion=False):
         for name, value, partition in con.get_name_value_partitions():
             if name == "partitions": # will be populated automatically
                 continue
@@ -260,6 +262,8 @@ class Container:
                     my_value.merge_containers(value, in_recursion=True)
                 elif in_recursion: # only merge vars when in a descendant container
                     self.__set(name, value, partition)
+            elif not coincident_only:
+                self.__set(name, value, partition)
         return self
 
     def walk(self):
@@ -627,6 +631,12 @@ class Container:
         return self.to_string()
 
     def __contains__(self, obj):
+        if isinstance(obj, (list, tuple)):
+            return self.var_exists(obj[0], obj[1])
+        elif not isinstance(obj, str):
+            raise ValueError(
+                "Comparison object may be str or list/tuple of str w/ len=2. Recieved %s" % (type(obj))
+            )
         return self.key_exists(obj)
 
     def __getitem__(self, key):

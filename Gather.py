@@ -15,23 +15,44 @@ def parse_config(contents, con=None):
 
 def parse_errors(contents, con=None):
     if con is None: con = Container()
-    partition, feature_label, spatial_label, error_name = None, None, None, None
+    partition, partition_error = None, None
+    feature_label, feature_error = None, None
+    spatial_label, spatial_error = None, None
     lines = contents.split("\n")
-    for i in range(len(lines)):
-        if lines[i].startswith("\t\t"): # Error line for a spatial element
-            fields = lines[i].split()
-            spatial_label, error_name, error = " ".join(fields[1:-3]), fields[-3], float(fields[-1])
-            con.get(error_name, partition).get(feature_label)[spatial_label] = error
-        elif lines[i].startswith("\t"): # Error line for a response variable
-            fields = lines[i].split()
-            feature_label, error_name, error = fields[0], fields[1], float(fields[-1])
+    for i, line in enumerate(lines):
+        fields = line.split()
+        if line.startswith("\t\t"): # error line for a spatial element
+            if feature_label is None or feature_error is None:
+                raise IOError("Failed to parse feature error line: \n%s" % (line))
+            spatial_label, error_name, spatial_error = " ".join(fields[1:-3]), fields[-3], float(fields[-1])
+            con.get(error_name, partition).get(feature_label)[spatial_label] = spatial_error
+        elif line.startswith("\t"): # error line for a feature
+            if partition is None or partition_error is None:
+                raise IOError("Failed to parse partition error line: \n%s" % (line))
+            if not feature_label is None:
+                con.get(error_name, partition).set(feature_label, feature_error)
+            feature_label, error_name, feature_error = fields[0], fields[1], float(fields[-1])
             con.get(error_name, partition).set(feature_label, {})
-        elif len(lines[i]) > 0 and not lines[i].startswith(("#", " ")): # Error line for a partition
-            fields = lines[i].split()
-            partition, error_name, error = fields[0], fields[1], float(fields[-1])
+            spatial_label, spatial_error = None, None
+        elif len(line) > 0 and not line.startswith(("#", " ")): # error line for a partition
+            if not partition is None: # previous partition line
+                if feature_label is None: # no feature errors
+                    con.set(error_name, partition_error, partition)
+                elif spatial_label is None: # feature error lines but no spatial error lines
+                    con.get(error_name, partition).set(feature_label, feature_error)
+            partition, error_name, partition_error = fields[0], fields[1], float(fields[-1])
             con.set(error_name, Container(), partition)
+            feature_label, feature_error = None, None
+            spatial_label, spatial_error = None, None
         else:
-            continue
+            partition, partition_error = None, None
+            feature_label, feature_error = None, None
+            spatial_label, spatial_error = None, None
+    if not partition is None: # previous partition line
+        if feature_label is None: # no feature errors
+            con.set(error_name, partition_error, partition)
+        elif spatial_label is None: # feature error lines but no spatial error lines
+            con.get(error_name, partition).set(feature_label, feature_error)
     return con
 
 
@@ -186,8 +207,8 @@ def get_paths(root_dir, fname):
     return paths
 
 
-def find_model_id(cache, model, conditions=None, on_multi="get-choice", return_channel_con=False, return_channel_name=False):
-    if conditions is None or conditions == []:
+def find_model_id(cache, model, where=None, on_multi="get-choice", return_channel_con=False, return_channel_name=False):
+    if where is None or where == []:
         channel_name, channel_con, _ = cache[0]
         found = channel_con.get(model)
         if len(found) == 0:
@@ -206,42 +227,52 @@ def find_model_id(cache, model, conditions=None, on_multi="get-choice", return_c
         else:
             raise ValueError()
     else:
-        if isinstance(conditions, dict):
-            found = cache.find(**conditions)
-            if len(found) == 0:
-                raise ValueError(
-                    "Input conditions=%s did not result in any found cache channels" % (str(conditions))
-                )
+        if not (util.Types.is_list_of_list(where) or util.Types.is_list_of_dict(where)):
+            if isinstance(where, dict):
+                where = [where]
+            elif isinstance(where, list):
+                if isinstance(where[0], str):
+                    where = [where]
+                elif not isinstance(where[0], list):
+                    raise ValueError("Input where may be list, dict, list of list, list of dict, or None. Received %s" % (type(where)))
+            else:
+                raise ValueError("Input where may be list, dict, list of list, list of dict, or None. Received %s" % (type(where)))
+        if util.Types.is_list_of_dict(where):
+            found = cache
+            for _where in where:
+                found = found.find(**_where)
             channel_name, channel_con, _ = found[0]
-            found = channel_con.find(**conditions, path=[model])
+            found = channel_con.get(model)
+            for _where in where:
+                found = found.find(**_where)
         else:
-            if isinstance(conditions[0], str): # single condition - wrap to treat and multi
-                conditions = [conditions]
-            names = [condition[0] for condition in conditions]
-            comparators = [condition[1] for condition in conditions]
-            values = [condition[2] for condition in conditions]
+            if isinstance(where[0], str): # single condition - wrap to treat and multi
+                where = [where]
+            names = [_[0] for _ in where]
+            comparators = [_[1] for _ in where]
+            values = [_[2] for _ in where]
             found = cache.find(names[0], values[0], comparators[0])
             if len(found) == 0:
                 raise ValueError(
-                    "Input conditions=%s did not result in any found cache channels" % (str(conditions))
+                    "Input where=%s did not result in any found cache channels" % (str(where))
                 )
             channel_name, channel_con, _ = found[0]
             found = channel_con.find(names, values, comparators, path=[model])
-        if len(found) == 0:
-            raise ValueError("No model instances found for model=\"%s\" matching conditions=%s" % (model, str(conditions)))
-        elif len(found) == 1:
-            model_id, var, _ = found[0]
-        elif on_multi == "get-choice":
-            print("Found multiple model instances for model=\"%s\" matching conditions=%s. Please choose one:" % (model, str(conditions)))
-            print("\n".join(["%d : %s" % (i, found[i][0]) for i in range(len(found))]))
-            idx = int(input("Choice: "))
-            model_id, var, _ = found[idx]
-        elif on_multi == "get-first":
-            model_id, var, _ = found[0]
-        elif on_multi == "get-last":
-            model_id, var, _ = found[-1]
-        else:
-            raise ValueError()
+    if len(found) == 0:
+        raise ValueError("No model instances found for model=\"%s\" matching where=%s" % (model, str(where)))
+    elif len(found) == 1:
+        model_id, var, _ = found[0]
+    elif on_multi == "get-choice":
+        print("Found multiple model instances for model=\"%s\" matching where=%s. Please choose one:" % (model, str(where)))
+        print("\n".join(["%d : %s" % (i, found[i][0]) for i in range(len(found))]))
+        idx = int(input("Choice: "))
+        model_id, var, _ = found[idx]
+    elif on_multi == "get-first":
+        model_id, var, _ = found[0]
+    elif on_multi == "get-last":
+        model_id, var, _ = found[-1]
+    else:
+        raise ValueError()
     if return_channel_con and return_channel_name:
         return model_id, channel_con, channel_name
     elif return_channel_con:

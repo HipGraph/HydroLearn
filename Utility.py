@@ -113,19 +113,34 @@ def convert_name_convention(name, orig_conv, targ_conv):
     return new_name
 
 
-def get_paths(search_dir, path_regex, recurse=False, debug=False):
+def get_paths(search_dir, path_regex, recurse=False, files=True, debug=False):
     if not os.path.exists(search_dir):
         raise FileNotFoundError(search_dir)
     paths = []
     for root, dirnames, filenames in os.walk(search_dir):
-        for filename in filenames:
-            if debug:
-                print(path_regex, root, filename)
-            if re.match(path_regex, filename):
-                paths += [os.path.join(root, filename)]
+        if files:
+            for filename in filenames:
+                if debug:
+                    print(path_regex, root, filename)
+                if re.match(path_regex, filename):
+                    paths.append(os.path.join(root, filename))
+        else:
+            for dirname in dirnames:
+                if debug:
+                    print(path_regex, root, dirname)
+                if re.match(path_regex, dirname):
+                    paths.append(os.path.join(root, dirname))
         if not recurse:
             break
     return paths
+
+
+def get_choice(items, sort=True):
+    if sort:
+        items = sorted(items)
+    print("\n".join(["%d : %s" % (i, item) for i, item in enumerate(items)]))
+    idx = int(input("Choice? : "))
+    return items[idx]
 
 
 class Types:
@@ -150,6 +165,12 @@ class Types:
             return all(isinstance(i, str) for i in item)
         return False
 
+    def is_list_of_list(item):
+        return isinstance(item, list) and all([isinstance(_, list) for _ in item])
+
+    def is_list_of_dict(item):
+        return isinstance(item, list) and all([isinstance(_, dict) for _ in item])
+
 
 def get_func_args(func):
     args, var_args, kw_args, def_vals = inspect.getargspec(func)
@@ -158,24 +179,6 @@ def get_func_args(func):
     req_args = args[:-len(def_vals)]
     def_args = dict(zip(list_subtract(list(args), req_args), def_vals))
     return req_args, var_args, kw_args, def_args
-
-
-def get_interval_from_selection(selection):
-    mode = selection[0]
-    implemented_modes = ["interval", "range", "literal"]
-    if mode not in implemented_modes:
-        raise NotImplementedError("Given mode \"%s\" but only modes \"%s\" are implemented" % (
-            mode,
-            ",".join(implemented_modes))
-        )
-    if mode == "interval":
-        interval = selection[1:]
-    elif mode == "range":
-        interval = selection[1:2]
-    elif mode == "literal":
-        sorted_selection = sorted(selection[1:])
-        interval = [sorted_selection[1], sorted_selection[-1]]
-    return interval
 
 
 def compute_zscore_classes(vals, means, stddevs, z_intervals):
@@ -315,17 +318,6 @@ def get_stats(a):
     return stat_value_map
 
 
-def get_least_similar(similarities, src, k):
-    G = nx.convert_matrix.from_numpy_matrix(similarities)
-    distances, paths = nx.algorithms.shortest_paths.weighted.single_source_dijkstra(G, source=src, cutoff=k)
-    least_similar = {}
-    for target, path in paths.items():
-        if len(path) == k:
-            path_str = ",".join(map(str, path))
-            least_similar[path_str] = distances[target]
-    return dict(sorted(least_similar.items(), key=lambda item: item[1]))
-
-
 def format_memory(n_bytes):
     if n_bytes == 0:
         return "0B"
@@ -388,217 +380,6 @@ def contiguous_window_indices(n, length, stride=1, offset=0):
     return np.arange(offset, n, length // stride)
 
 
-# Calculate mean absolute error (MAE) for each spatial element and feature
-# Pre-conditions:
-#   Y.shape=(n_sample, n_temporal, n_spatial, n_feature)
-#   Yhat.shape=(n_sample, n_temporal, n_spatial, n_feature)
-# Post-conditions:
-#   MAE.shape=(n_spatial, n_feature)
-def MAE(Y, Yhat, **kwargs):
-    # Unpack args
-    axis = kwargs.get("axis", (0, 1))
-    mask = kwargs.get("mask", None)
-    # Compute
-    if not mask is None:
-        Yhat = np.copy(Yhat)
-        Yhat[~mask] = Y[~mask]
-    return np.mean(np.abs(Y - Yhat), axis)
-
-
-# Calculate mean square error (MSE) for each spatial element and feature
-# Pre-conditions:
-#   Y.shape=(n_sample, n_temporal, n_spatial, n_feature)
-#   Yhat.shape=(n_sample, n_temporal, n_spatial, n_feature)
-# Post-conditions:
-#   MSE.shape=(n_spatial, n_feature)
-def MSE(Y, Yhat, **kwargs):
-    # Unpack args
-    axis = kwargs.get("axis", (0, 1))
-    mask = kwargs.get("mask", None)
-    # Compute
-    if not mask is None:
-        Yhat = np.copy(Yhat)
-        Yhat[~mask] = Y[~mask]
-    return np.mean((Y - Yhat)**2, axis)
-
-
-# Calculate root mean square error (RMSE) for each spatial element and feature
-# Pre-conditions:
-#   Y.shape=(n_sample, n_temporal, n_spatial, n_feature)
-#   Yhat.shape=(n_sample, n_temporal, n_spatial, n_feature)
-# Post-conditions:
-#   MAPE.shape=(n_spatial, n_feature)
-def MAPE(Y, Yhat, **kwargs):
-    # Unpack args
-    axis = kwargs.get("axis", (0, 1))
-    eps = kwargs.get("eps", np.finfo(np.float64).eps)
-    mask = kwargs.get("mask", None)
-    # Compute
-    if not mask is None:
-        Yhat = np.copy(Yhat)
-        Yhat[~mask] = Y[~mask]
-    if 0:
-        print((Y - Yhat).shape)
-        print(np.abs(Y - Yhat).shape)
-        print(np.maximum(np.abs(Y), eps).shape)
-#        print(np.abs((Y - Yhat) / np.maximum(np.abs(Y), eps)))
-        print(np.max(np.abs((Y - Yhat) / np.maximum(np.abs(Y), eps))))
-        input()
-    return np.mean(np.minimum(np.abs((Y - Yhat) / np.maximum(np.abs(Y), eps)), 100), axis)
-    return np.mean(np.abs((Y - Yhat) / np.maximum(np.abs(Y), eps)), axis)
-
-
-# Calculate root mean square error (RMSE) for each spatial element and feature
-# Pre-conditions:
-#   Y.shape=(n_sample, n_temporal, n_spatial, n_feature)
-#   Yhat.shape=(n_sample, n_temporal, n_spatial, n_feature)
-# Post-conditions:
-#   RMSE.shape=(n_spatial, n_feature)
-def RMSE(Y, Yhat, **kwargs):
-    # Unpack args
-    mask = kwargs.get("mask", None)
-    # Compute
-    if not mask is None:
-        Yhat = np.copy(Yhat)
-        Yhat[~mask] = Y[~mask]
-    return np.sqrt(MSE(Y, Yhat, **kwargs))
-
-
-# Calculate normalized root mean square error (NRMSE) for each spatial element and feature
-# Preconditions:
-#   Y.shape=(n_sample, n_temporal, n_spatial, n_feature)
-#   Yhat.shape=(n_sample, n_temporal, n_spatial, n_feature)
-#   mins.shape=(period_size, n_spatial, n_feature)
-#   maxes.shape=(period_size, n_spatial, n_feature)
-# Post-conditions:
-#   NRMSE.shape=(n_spatial, n_feature)
-def NRMSE(Y, Yhat, **kwargs):
-    # Unpack args
-    mins, maxes = kwargs["mins"], kwargs["maxes"]
-    axis = kwargs.get("axis", (0, 1))
-    eps = kwargs.get("eps", np.finfo(np.float64).eps)
-    mask = kwargs.get("mask", None)
-    # Setup
-    if 0:
-        mins = np.min(mins, axis=0)
-        maxes = np.max(maxes, axis=0)
-    # Compute
-    if not mask is None:
-        Yhat = np.copy(Yhat)
-        Yhat[~mask] = Y[~mask]
-    return RMSE(Y, Yhat, **kwargs) / np.maximum(maxes - mins, eps)
-
-
-def UPR(Y, Yhat, **kwargs):
-    # Unpack args
-    axis = kwargs.get("axis", (0, 1))
-    margin = kwargs.get("margin", 5/100)
-    mask = kwargs.get("mask", None)
-    # Compute
-    if not mask is None:
-        Yhat = np.copy(Yhat)
-        Yhat[~mask] = Y[~mask]
-    up_count = np.sum(Yhat < ((1 - margin) * Y), axis)
-    N = np.prod(np.take(Y.shape, axis))
-    return up_count / N
-
-
-def OPR(Y, Yhat, **kwargs):
-    # Unpack args
-    axis = kwargs.get("axis", (0, 1))
-    margin = kwargs.get("margin", 5/100)
-    mask = kwargs.get("mask", None)
-    # Compute
-    if not mask is None:
-        Yhat = np.copy(Yhat)
-        Yhat[~mask] = Y[~mask]
-    op_count = np.sum(Yhat > ((1 + margin) * Y), axis)
-    N = np.prod(np.take(Y.shape, axis))
-    return op_count / N
-
-
-def MR(Y, Yhat, **kwargs):
-    # Compute
-    return UPR(Y, Yhat, **kwargs) + OPR(Y, Yhat, **kwargs)
-
-
-def RRSE(Y, Yhat, **kwargs):
-    # Unpack args
-    axis = kwargs.get("axis", (0, 1))
-    means = kwargs["means"]
-    eps = kwargs.get("eps", np.finfo(np.float64).eps)
-    # Setup
-    if 0:
-        means = np.mean(means, axis=0)[None,None,:,:]
-    else:
-        means = means[None,None,:,:]
-    # Compute
-    return np.sqrt(np.sum((Y - Yhat)**2, axis) / np.sum((Y - means)**2, axis))
-
-
-def CORR(Y, Yhat, **kwargs):
-    axis = kwargs.get("axis", (0, 1))
-    means = kwargs["means"]
-    eps = kwargs.get("eps", np.finfo(np.float64).eps)
-    # Setup
-    M = means[None,None,:,:]
-    # Compute
-    return np.sum((Yhat - M) * (Y - M), axis) / (np.sqrt(np.sum((Yhat - M)**2, axis)) * np.sqrt(np.sum((Y - M)**2, axis)))
-
-
-# Preconditions:
-#   errors: a list of numpy arrays with shape=(n_spatial, n_feature)
-def curate_performance_report(Ys, Yhats, partitions, spatial_labels, spatial_names, feature_labels, metrics, metric_kwargs):
-    if not isinstance(Ys, list) or not isinstance(Yhats, list) or not isinstance(partitions, list):
-        raise ValueError("Ground-truths, predictions, and partitions must be lists (Ys, Yhats, partitions).")
-    if not (len(Ys) == len(Yhats) == len(partitions)):
-        raise ValueError("Ground-truths, predictions, and partitions must be equal length.")
-    metric_func_map = {
-        "MAE": MAE,
-        "MSE": MSE,
-        "MAPE": MAPE,
-        "RMSE": RMSE,
-        "NRMSE": NRMSE,
-        "UPR": UPR,
-        "OPR": OPR,
-        "MR": MR, 
-        "RRSE": RRSE, 
-        "CORR": CORR, 
-    }
-    if metrics == "*":
-        metrics = list(metric_func_map.keys())
-    lines = []
-    for metric in metrics:
-        for i in range(len(partitions)):
-            Y, Yhat, partition = Ys[i], Yhats[i], partitions[i]
-            performances = metric_func_map[metric](Y, Yhat, **metric_kwargs[i])
-            lines += [
-                "%s %s = %.4f" % (
-                    partition,
-                    metric,
-                    np.mean(performances)
-                )
-            ]
-            for j in range(len(feature_labels)):
-                lines += [
-                    "\t%s %s = %.4f" % (
-                        feature_labels[j],
-                        metric,
-                        np.mean(performances[:,j])
-                    )
-                ]
-                for k in range(len(spatial_labels[i])):
-                    lines += [
-                        "\t\t%s %4s %s = %.4f" % (
-                            spatial_names[i],
-                            spatial_labels[i][k],
-                            metric,
-                            performances[k,j]
-                        )
-                    ]
-    return "\n".join(lines)
-
-
 # Construct a - b
 def list_subtract(a, b):
     if b is None:
@@ -644,7 +425,7 @@ def copy_dict(a):
 
 
 def to_key_index_dict(keys, offset=0, stride=1):
-    return {key: offset+i for key, i in zip(keys, np.arange(0, len(keys), stride))}
+    return {key: offset+i for key, i in zip(keys, range(0, len(keys), stride))}
 
 
 def to_dict(keys, values, repeat=False):
@@ -666,13 +447,14 @@ def sort_dict(a, by="key"):
 
 
 def get_dict_values(a, keys, must_exist=True):
-    values = []
-    for key in keys:
-        if not key in a and not must_exist:
-            continue
-        values.append(a[key])
-#    if isinstance(keys, np.ndarray):
-#        values = np.array(values)
+    if must_exist:
+        values = [a[_] for _ in keys]
+    else:
+        values = []
+        for key in keys:
+            if not key in a:
+                continue
+            values.append(a[key])
     return values
 
 
@@ -865,195 +647,6 @@ def transform(args, transform, revert=False):
     return transform_fn_map[name](*args, **kwargs)
 
 
-class WabashRiverSubbasinSoil:
-
-    def __init__(self, item, debug=False):
-        lines = item.split("\n")
-        header = lines[0]
-        if "Area [ha]" in header:
-            header = header.replace("Area [ha]", "area_ha")
-        if "Area[acres]" in header:
-            header = header.replace("Area[acres]", "area_acres")
-        if "%Wat.Area" in header:
-            header = header.replace("%Wat.Area", "watershed_area")
-        if "%Sub.Area" in header:
-            header = header.replace("%Sub.Area", "subbasin_area")
-        self.features = header.split()
-        self.data = {}
-        i = 0
-        while i < len(lines):
-            fields = lines[i].split()
-            if debug:
-                print("FIELDS =", fields)
-            if len(fields) < 1:
-                i += 1
-                continue
-            if fields[0] == "SUBBASIN":
-                self.data["subbasin"] = fields[2]
-            if fields[0] == "LANDUSE:":
-                j, k = i + 1, 0
-                while j < len(lines):
-                    fields = lines[j].split("-->")
-                    if debug:
-                        print("FIELDS =", fields)
-                    if len(fields) > 0 and fields[0] == "SOILS:":
-                        break
-                    if len(fields) > 1:
-                        fields = fields[1].split()
-                        for _feature, field in zip(["type"]+self.features, fields):
-                            self.data["landuse"+str(k+1)+"_"+_feature] = field
-                        k += 1
-                    j += 1
-                i = j - 1
-            if fields[0] == "SOILS:":
-                j, k = i + 1, 0
-                while j < len(lines):
-                    fields = lines[j].split()
-                    if debug:
-                        print("FIELDS =", fields)
-                    if len(fields) > 0 and fields[0] == "SLOPE:":
-                        break
-                    if len(fields) > 1:
-                        for _feature, field in zip(["type"]+self.features, fields):
-                            self.data["soil"+str(k+1)+"_"+_feature] = field
-                        k += 1
-                    j += 1
-                i = j - 1
-            i += 1
-
-    def __str__(self):
-        lines = []
-        for key, value in self.__dict__.items():
-            lines.append("%s : %s" % (str(key), str(value)))
-        return "\n".join(lines)
-
-
-def convert_wabash_river_spatial():
-    import re
-    data_dir = os.sep.join(["Data", "WabashRiver"])
-    # Convert soil data
-    #   Create soil objects
-    path = os.sep.join([data_dir, "SpatialData_Type[Elevation,LandUse]", "text", "HRULandUseSoilsReport.txt"])
-    with open(path, "r") as f:
-        content = f.read()
-    items = content.split(122*"_"+"\n")
-    max_features = -1
-    soils = []
-    for i in range(5, len(items), 2):
-        soil = WabashRiverSubbasinSoil(items[i])
-        soils.append(soil)
-        if 0:
-            print(122*"_")
-            print(soil)
-        if len(soil.data.keys()) > max_features:
-            max_features = len(soil.data.keys())
-            feature_superset = list(soil.data.keys())
-    #   Get feature labels
-    features = []
-    remove = [".*area_ha.*", ".*area_acres.*", ".*watershed_area.*"]
-    for feature in feature_superset:
-        matches = [not re.match(rem, feature) is None for rem in remove]
-        if not any(matches):
-            features.append(feature)
-    #   Create dataframe
-    print(features)
-    data = {
-        "subbasin": [],
-        "landuse_types": [],
-        "landuse_proportions": [],
-        "soil_types": [],
-        "soil_proportions": []
-    }
-    for i in range(len(soils)):
-        soil = soils[i]
-        print(soil)
-        landuse_types, landuse_proportions = [], []
-        soil_types, soil_proportions = [], []
-        for feature in soil.data.keys():
-            if feature in data:
-                data[feature].append(soil.data[feature])
-            elif re.match("landuse\d_type", feature):
-                landuse_types.append(soil.data[feature])
-            elif re.match("landuse\d_subbasin_area", feature):
-                landuse_proportions.append(soil.data[feature])
-            elif re.match("soil\d_type", feature):
-                soil_types.append(soil.data[feature])
-            elif re.match("soil\d_subbasin_area", feature):
-                soil_proportions.append(soil.data[feature])
-        data["landuse_types"].append(";".join(landuse_types))
-        data["landuse_proportions"].append(";".join(landuse_proportions))
-        data["soil_types"].append(";".join(soil_types))
-        data["soil_proportions"].append(";".join(soil_proportions))
-    soil_df = pd.DataFrame.from_dict(data)
-    print(soil_df)
-    # Convert meta data
-    path = os.sep.join([data_dir, "WabashSubbasin_AreaLatLon.csv"])
-    df = pd.read_csv(path)
-    #   Edit feature labels
-    columns = [col.lower() for col in df.columns]
-    columns[columns.index("lat_1")] = "lat"
-    columns[columns.index("long_1")] = "lon"
-    df.columns = columns
-    #   Get feature labels
-    features = []
-    remove = [".*fid.*", ".*gridcode.*"]
-    for feature in df.columns:
-        matches = [not re.match(rem, feature) is None for rem in remove]
-        if not any(matches):
-            features.append(feature)
-    #   Create dataframe
-    meta_df = df[features]
-    print(meta_df)
-    # Convert elevation data
-    path = os.sep.join([data_dir, "WabashSubbasinEvalationStatistics.csv"])
-    df = pd.read_csv(path)
-    #   Edit feature labels
-    columns = ["elevation_"+col.lower() for col in df.columns]
-    columns[columns.index("elevation_subbasin")] = "subbasin"
-    df.columns = columns
-    #   Get feature labels
-    features = []
-    remove = [".*rowid.*", ".*count.*", ".*area.*", ".*range.*", ".*sum.*"]
-    for feature in df.columns:
-        matches = [not re.match(rem, feature) is None for rem in remove]
-        if not any(matches):
-            features.append(feature)
-    #   Create dataframe
-    elev_df = df[features]
-    print(elev_df)
-    # Convert river data
-    path = os.sep.join([data_dir, "WabashSubbasinRivers.csv"])
-    df = pd.read_csv(path)
-    #   Edit feature labels
-    columns = ["river_"+col.lower() for col in df.columns]
-    columns[columns.index("river_subbasin")] = "subbasin"
-    columns[columns.index("river_len2")] = "river_length"
-    columns[columns.index("river_slo2")] = "river_slope"
-    columns[columns.index("river_wid2")] = "river_width"
-    columns[columns.index("river_dep2")] = "river_depth"
-    df.columns = columns
-    #   Get feature labels
-    features = []
-    remove = [".*fid.*", ".*objectid.*", ".*arcid.*", ".*grid_code.*", ".*from_node.*", ".*to_node.*", ".*subbasinr.*", ".*areac.*", ".*minel.*", ".*maxel.*", ".*shape_leng.*", ".*hydroid.*", ".*outletid.*"]
-    for feature in df.columns:
-        matches = [not re.match(rem, feature) is None for rem in remove]
-        if not any(matches):
-            features.append(feature)
-    #   Create dataframe
-    river_df = df[features]
-    print(river_df)
-    # Join all dataframes and save
-    dfs = [soil_df, meta_df, elev_df, river_df]
-    df = dfs[0]
-    df["subbasin"] = df["subbasin"].astype(int)
-    for _df in dfs[1:]:
-        _df["subbasin"] = _df["subbasin"].astype(int)
-        df = df.merge(_df, "left", "subbasin")
-    print(df)
-    path = os.sep.join([data_dir, "Spatial.csv"])
-    df.to_csv(path, index=False)
-
-
 def resolution_to_delta(res):
     return dt.timedelta(**{res[1]: res[0]})
 
@@ -1154,18 +747,18 @@ def generate_temporal_labels(start, end, delta, frmt="%Y-%m-%d_%H-%M-%S", incl=[
 
 
 def temporal_labels_to_periodic_indices(labels, period, resolution, frmt="%Y-%m-%d_%H-%M-%S"):
-    """ Generates a chronologically ordered set of string-formatted time-stamps for a given range
+    """ Converts a chronologically ordered set of string-formatted time-stamps into a set of recurring index locations according to moments of a given period.
 
     Arguments
     ---------
-    labels : np.ndarray, list or tuple of str
-    period : list of [int, str]
-    resolution : list of [int, str]
+    labels : tuple, list, or ndarray of str
+    period : tuple or list 2-tuple of (int, str)
+    resolution : tuple or list 2-tuple of (int, str)
     frmt : str
 
     Returns
     -------
-    temporal_labels : list of str
+    temporal_labels : tuple, list, or ndarray of str
 
     """
     # Check arguments
@@ -1267,117 +860,3 @@ def labels_to_ids(labels):
     unique_labels = np.sort(np.unique(labels))
     label_index_map = to_key_index_dict(unique_labels)
     return np.reshape(np.array([label_index_map[label] for label in labels]), orig_shape)
-
-
-# Preconditions:
-#   Give: N = n_spatial, T = n_temporal, and F = n_feature
-#   df.shape=(N*T, 2+F)
-def compute_spatiotemporal_correlations(df, spatial_label_field, temporal_label_field, feature):
-    spatial_labels = df[spatial_label_field].unique()
-    temporal_labels = df[temporal_label_field].unique()
-    n_spatial = len(spatial_labels)
-    n_temporal = len(temporal_labels)
-    A = np.reshape(df[feature].to_numpy().astype(float), (n_spatial, n_temporal))
-    A = np.swapaxes(A, 0, 1)
-    df = pd.DataFrame(A, index=temporal_labels, columns=spatial_labels)
-    return df.corr()
-
-
-if __name__ == "__main__":
-#    convert_los_loop()
-#    convert_sz_taxi()
-#    convert_metr_la()
-#    convert_pems_bay()
-#    convert_solar()
-#    convert_electricity()
-#    convert_ecg_5000()
-#    convert_covid_19()
-#    convert_wabash_river_swat()
-#    convert_wabash_river_observed()
-#    convert_little_river()
-#    convert_pems()
-    convert_wabash_river_spatial()
-    quit()
-    method = "topk"
-    method = "threshold"
-    method = "smart-threshold"
-    method = "threshold-topk"
-    datasets = ["Solar", "Electricity", "ECG5000", "COVID-19"]
-    spatial_label_fields = ["sensor", "sensor", "sensor", "country"]
-    temporal_label_fields = ["date", "date", "date", "date"]
-    features = ["power_MW", "power_kW", "signal_mV", "confirmed"]
-    for i in range(len(datasets))[:]:
-        path = os.sep.join(["Data", datasets[i], "Observed", "Spatiotemporal.csv"])
-        df = pd.read_csv(path)
-        print(df)
-        corr = compute_spatiotemporal_correlations(
-            df,
-            spatial_label_fields[i],
-            temporal_label_fields[i],
-            features[i]
-        )
-        print(corr)
-        print(datasets[i])
-        n_spatial = len(corr)
-        if method == "smart-threshold":
-            avg_degree = int(n_spatial * 0.05)
-            print("Target Average Node Degree =", avg_degree)
-            n_expected_edges = avg_degree * n_spatial
-            thresh, step_size = 0.5, 0.001
-            tmp = corr.abs().to_numpy()
-            while np.sum(tmp > thresh) > n_expected_edges:
-                print(np.sum(tmp > thresh))
-                thresh += step_size
-            print("Found Threshold =", thresh)
-            corr[corr.abs() < thresh] = 0
-            df = corr
-        elif method == "threshold-topk":
-            avg_degree = int(n_spatial * 0.05)
-            min_degree, max_degree = 2, n_spatial
-            print("Target Mean Node Degree =", avg_degree)
-            n_expected_edges = avg_degree * n_spatial
-            thresh, step_size = 0.5, 0.001
-            tmp = corr.abs().to_numpy()
-            while np.sum(tmp > thresh) > n_expected_edges:
-                thresh += step_size
-            print("Found Threshold =", thresh)
-            ks = np.sum(tmp > thresh, axis=1)
-            print("Node Degrees =")
-            print(ks)
-            ks = np.sum(tmp > thresh, axis=0)
-            print("Node Degrees =")
-            print(ks)
-            ks = np.clip(ks, min_degree, max_degree)
-            print("Node Degrees =")
-            print(ks)
-            adj = np.zeros((n_spatial, n_spatial))
-            for j in range(len(ks)):
-                indices = np.argsort(tmp[j,:])[-ks[j]:]
-                adj[j,indices] = 1
-                adj[indices,j] = 1
-            print(adj)
-            df = pd.DataFrame(adj, columns=corr.columns)
-            print(df)
-        elif method == "threshold":
-            corr[corr.abs() < 0.95] = 0
-            df = corr
-        elif method == "topk":
-            k = int(n_spatial * 0.05) + 1
-            print(k)
-            df = pd.DataFrame(
-                np.where(corr.rank(axis=1,method='min',ascending=False)>k, 0, corr),
-                columns=corr.columns
-            )
-        else:
-            raise NotImplementedError(method)
-        node_degrees = np.sum(df.to_numpy() > 0, axis=1)
-        print("Node Degrees =")
-        print(node_degrees)
-        node_degrees = np.sum(df.to_numpy() > 0, axis=0)
-        print("Node Degrees =")
-        print(node_degrees)
-        print("Mean Node Degree =", np.mean(node_degrees))
-        df = adjacency_to_edgelist(df, np.array(df.columns))
-        print(df)
-        path = os.sep.join(["Data", datasets[i], "Observed", "Graph.csv"])
-        df.to_csv(path, index=False)

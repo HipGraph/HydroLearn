@@ -264,10 +264,7 @@ class Driver:
             jobs = [Job(args)]
         # Edit jobs
         for job in jobs: # Add driver-level args to all jobs
-            job.work.merge(args)
-            for name, value, partition in args.get_name_value_partitions():
-                if not isinstance(value, Container):
-                    job.work.set(name, value, partition)
+            job.work.merge(args, coincident_only=False)
         # All jobs are ready - move to invocation
         executor = Executor(
             self.interpreter, 

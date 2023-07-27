@@ -1,52 +1,11 @@
 import numpy as np
 
+import Utility as util
+
 
 class DataSelection:
 
-    selection_modes = ["interval", "range", "random", "random-split", "ordered-split", "literal", "all"]
-
-    def selection_implemented(self, selection):
-        mode = selection[0]
-        if mode not in self.selection_modes:
-            raise NotImplementedError("Given mode \"%s\" but only modes \"%s\" are implemented" % (
-                mode,
-                ",".join(self.selection_modes))
-            )
-
-    def selections_from_split(self, labels, split, mode="interval", drawn="contiguous"):
-        self.selection_implemented([mode])
-        selections = []
-        n = len(labels)
-        proportions = np.array(split) / sum(split)
-        if drawn == "contiguous":
-            if mode == "interval":
-                start, end = 0, 0
-                for i in range(len(proportions)):
-                    start, end = end, int(sum(proportions[:i+1]) * n) - 1
-                    if i > 0:
-                        start += 1
-                    selections.append([mode, labels[start], labels[end]])
-            elif mode == "range":
-                raise NotImplementedError(mode, drawn)
-            elif mode == "literal":
-                raise NotImplementedError(mode, drawn)
-            elif mode == "all":
-                raise NotImplementedError(mode, drawn)
-        elif drawn == "random":
-            if mode == "interval":
-                raise NotImplementedError(mode, drawn)
-            elif mode == "range":
-                raise NotImplementedError(mode, drawn)
-            elif mode == "literal":
-                raise NotImplementedError(mode, drawn)
-            elif mode == "all":
-                raise NotImplementedError(mode, drawn)
-        else:
-            raise NotImplementedError("Split drawing option \"%s\" not implemented" % (drawn))
-        return selections
-
     def interval_from_selection(self, selection):
-        self.selection_implemented(selection)
         mode = selection[0]
         if mode == "interval":
             interval = selection[1:]
@@ -66,67 +25,73 @@ class DataSelection:
             raise NotImplementedError(selection)
         return interval
 
-    def indices_from_selection(self, labels, selection):
-        self.selection_implemented(selection)
+    def indices_from_selection(self, labels, selection, **kwargs):
         mode = selection[0]
-        try:
-            if mode == "interval":
-                start_idx = np.where(labels == str(selection[1]))[0][0]
-                end_idx = np.where(labels == str(selection[2]))[0][0]
-                indices = np.arange(start_idx, end_idx+1)
-            elif mode == "range":
-                start, end, step = selection[1:]
-                if start < 0:
-                    start += len(labels) 
-                if end < 0:
-                    end += len(labels) 
-                indices = np.arange(start, end, step)
-            elif mode == "random":
-                k = selection[1]
-                if isinstance(k, float):
-                    k = round(k * len(labels))
-                rng = np.random.default_rng()
-                if len(selection) > 2:
-                    rng = np.random.default_rng(selection[2])
-                indices = rng.choice(len(labels), k, replace=False)
-            elif mode == "random-split":
-                start, end = selection[1:3]
-                if isinstance(start, float):
-                    start = int(start * len(labels))
-                elif not isinstance(start, int):
-                    raise ValueError()
-                if isinstance(end, float):
-                    end = int(end * len(labels))
-                elif not isinstance(end, int):
-                    raise ValueError()
-                rng = np.random.default_rng()
-                if len(selection) > 3:
-                    rng = np.random.default_rng(selection[3])
-                indices = rng.permutation(len(labels))[start:end]
-            elif mode == "ordered-split":
-                start, end = selection[1:3]
-                if isinstance(start, float):
-                    start = int(start * len(labels))
-                elif not isinstance(start, int):
-                    raise ValueError(selection)
-                if isinstance(end, float):
-                    end = int(end * len(labels))
-                elif not isinstance(end, int):
-                    raise ValueError(selection)
-                indices = np.arange(len(labels))[start:end]
-            elif mode == "literal":
-                indices = np.array([np.where(labels == str(i))[0][0] for i in selection[1:]])
-            elif mode == "all":
-                indices = np.arange(0, len(labels))
-            else:
-                raise NotImplementedError("Selection mode \"%s\" not implemented" % (mode))
-        except IndexError as err:
-            print("Function indices_from_selection() failed to locate an element from the set of labels and selection criteria below:")
-            print("Labels @", "len(%d)" % (len(labels)), "=")
-            print(labels)
-            print("Selection @", "len(%d)" % (len(selection)), "=")
-            print(selection)
-            raise IndexError(err)
+        if mode[0] == "~":
+            selection = [mode[1:]] + selection[1:]
+            indices = self.indices_from_selection(labels, selection)
+            indices = np.delete(np.arange(len(labels)), indices)
+        else:
+            try:
+                if mode == "interval":
+                    start_idx = np.where(labels == str(selection[1]))[0][0]
+                    end_idx = np.where(labels == str(selection[2]))[0][0]
+                    indices = np.arange(start_idx, end_idx+1)
+                elif mode == "range":
+                    start, end, step = selection[1:]
+                    if start < 0:
+                        start += len(labels) 
+                    if end < 0:
+                        end += len(labels) 
+                    indices = np.arange(start, end, step)
+                elif mode == "random":
+                    k = selection[1]
+                    if isinstance(k, float):
+                        k = round(k * len(labels))
+                    rng = np.random.default_rng()
+                    if len(selection) > 2:
+                        rng = np.random.default_rng(selection[2])
+                    indices = rng.choice(len(labels), k, replace=False)
+                elif mode == "random-split":
+                    start, end = selection[1:3]
+                    if isinstance(start, float):
+                        start = int(start * len(labels))
+                    elif not isinstance(start, int):
+                        raise ValueError()
+                    if isinstance(end, float):
+                        end = int(end * len(labels))
+                    elif not isinstance(end, int):
+                        raise ValueError()
+                    rng = np.random.default_rng()
+                    if len(selection) > 3:
+                        rng = np.random.default_rng(selection[3])
+                    indices = rng.permutation(len(labels))[start:end]
+                elif mode == "ordered-split":
+                    start, end = selection[1:3]
+                    if isinstance(start, float):
+                        start = int(start * len(labels))
+                    elif not isinstance(start, int):
+                        raise ValueError(selection)
+                    if isinstance(end, float):
+                        end = int(end * len(labels))
+                    elif not isinstance(end, int):
+                        raise ValueError(selection)
+                    indices = np.arange(len(labels))[start:end]
+                elif mode == "literal":
+                    indices = np.array(
+                        util.get_dict_values(util.to_key_index_dict(labels), selection[1:], **kwargs)
+                    )
+                elif mode == "all":
+                    indices = np.arange(0, len(labels))
+                else:
+                    raise NotImplementedError("Selection mode \"%s\" not implemented" % (mode))
+            except IndexError as err:
+                print("Function indices_from_selection() failed to locate an element from the set of labels and selection criteria below:")
+                print("Labels @", "len(%d)" % (len(labels)), "=")
+                print(labels)
+                print("Selection @", "len(%d)" % (len(selection)), "=")
+                print(selection)
+                raise IndexError(err)
         return indices
 
     # Description:
@@ -159,11 +124,31 @@ class DataSelection:
     #   1. axis - integer or list of integers
     #   2. indices - ndarray or list of ndarrays
     def filter_axis(self, data, axis, indices):
+        """
+
+        Arguments
+        ---------
+        data : ndarray or tuple/list/dict of ndarray
+        axis : int or tuple/list/dict of int
+        indices : ndarray or tuple/list/dict of ndarray
+
+        Returns
+        -------
+        data : ndarray or tuple/list/dict of ndarray
+            the data with given axis or axes filtered by the given indices
+
+        """
+        if isinstance(data, tuple):
+            return tuple(self.filter_axis(_, axis, indices) for _ in data)
+        elif isinstance(data, list):
+            return tuple(self.filter_axis(_, axis, indices) for _ in data)
+        elif isinstance(data, dict):
+            return {key: self.filter_axis(value, axis, indices) for key, value in data.items()}
         # filter just one axis with one index set
-        if not isinstance(axis, list) and not isinstance(indices, list):
+        if not isinstance(axis, (tuple, list)) and not isinstance(indices, (tuple, list)):
             return self.__filter_axis(data, axis, indices)
         # filter a set of axes with a set of filter index sets
-        if isinstance(axis, list) and isinstance(indices, list):
+        if isinstance(axis, (tuple, list)) and isinstance(indices, (tuple, list)):
             if len(axis) == len(indices): 
                 for _axis, _indices in zip(axis, indices):
                     data = self.__filter_axis(data, _axis, _indices)
@@ -176,10 +161,10 @@ class DataSelection:
                         data = self.__filter_axis(data, _axis, indices[0])
                 else: # lengths not equal and cannot be broadcasted
                     raise ValueError("Number of axes and filter index sets must be equal or broadcastable")
-        elif isinstance(axis, list): # a single filter index set, broadcast it to all axes
+        elif isinstance(axis, (tuple, list)): # a single filter index set, broadcast it to all axes
             for _axis in axis:
                 data = self.__filter_axis(data, _axis, indices)
-        elif isinstance(indices, list): # a single axis, broadcast it to all fitler index sets
+        elif isinstance(indices, (tuple, list)): # a single axis, broadcast it to all fitler index sets
             for _indices in indices:
                 data = self.__filter_axis(data, axis, _indices)
         return data
@@ -217,10 +202,17 @@ class DataSelection:
         return self.__filter_axes(data, axes, indices)
     
     def __filter_axis_foreach(self, data, axis, indices):
-        if isinstance(data, dict):
-            data = {key: self.__filter_axis(value, axis, indices) for key, value in data.items()}
+        if isinstance(data, tuple):
+            data = tuple(self.__filter_axis(_, axis, indices) for _ in data)
         elif isinstance(data, list):
-            data = [self.__filter_axis(value, axis, indices) for value in data]
+            data = [self.__filter_axis(_, axis, indices) for _ in data]
+        elif isinstance(data, dict):
+            data = {key: self.__filter_axis(value, axis, indices) for key, value in data.items()}
+        elif isinstance(data, np.ndarray) and issubclass(data.dtype.type, np.object):
+            return np.reshape(
+                np.array((self.filter_axis(_, axis, indices) for _ in np.reshape(data, -1)), dtype=object), 
+                data.shape
+            )
         else:
             raise NotImplementedError("Unknown type (%s) for data in __filter_axis_foreach()" % (str(type))) 
         return data
